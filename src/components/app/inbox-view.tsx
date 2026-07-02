@@ -11,7 +11,7 @@ import {
   X, TrendingUp, AlertTriangle, MessageSquare,
   Lightbulb, Target, Zap, PlugZap, MessageCircleMore,
 } from "lucide-react";
-import { useStore, useHydrated } from "@/lib/store";
+import { useStore, useHydrated, DEFAULT_OWNER } from "@/lib/store";
 import { analyzeConversation, type SalesInsight, type InsightType } from "@/lib/sales-ai";
 import Link from "next/link";
 
@@ -446,30 +446,112 @@ export function InboxView() {
     setActiveConvId(first?.id ?? "");
   }, [activeChannel, convs]);
 
+  /* ── Cria contato + deal no funil quando nova conversa chega ── */
+  function registerLeadInFunnel(contactName: string, channel: Channel, firstMessage: string) {
+    const state = useStore.getState();
+
+    // Verifica se contato ja existe
+    const exists = state.contacts.find(
+      (c) => c.name.toLowerCase() === contactName.toLowerCase()
+    );
+
+    if (!exists) {
+      state.addContact({
+        name:    contactName,
+        email:   "",
+        phone:   "",
+        company: "",
+        source:  CHANNEL_META[channel].label,
+        score:   10,
+        owner:   DEFAULT_OWNER,
+        tags:    [channel],
+      });
+    }
+
+    // Verifica se ja tem deal aberto para esse contato
+    const dealExists = state.deals.find(
+      (d) => d.contact === contactName && d.status === "open"
+    );
+
+    if (!dealExists && state.pipelines.length > 0) {
+      const pipeline = state.pipelines[0];
+      const newLeadStage = pipeline.stages.find((s) =>
+        s.name.toLowerCase().includes("novo") || s.name.toLowerCase().includes("new")
+      ) ?? pipeline.stages[0];
+
+      if (newLeadStage) {
+        state.addDeal({
+          title:      `${contactName} — via ${CHANNEL_META[channel].label}`,
+          value:      0,
+          pipelineId: pipeline.id,
+          stageId:    newLeadStage.id,
+          contact:    contactName,
+          owner:      DEFAULT_OWNER,
+          tags:       [channel],
+          notes:      `Primeira mensagem: "${firstMessage.slice(0, 120)}"`,
+        });
+      }
+    }
+  }
+
   function handleSend(convId: string, text: string) {
     const now  = new Date();
     const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     setThreads((t) => ({ ...t, [convId]: [...(t[convId] ?? []), { from: "out", text, time }] }));
+
     // Atualiza preview
     setConvs((cs) => cs.map((c) => c.id === convId ? { ...c, preview: text, time: "agora" } : c));
+
+    // Enriquece o deal do contato com a resposta do SDR
+    const conv = convs.find((c) => c.id === convId);
+    if (conv) {
+      const state  = useStore.getState();
+      const deal   = state.deals.find((d) => d.contact === conv.contact && d.status === "open");
+      if (deal) {
+        const threadCount = (threads[convId]?.length ?? 0) + 1;
+        // A cada resposta do SDR, avanca para "Em contato" se ainda estiver em "Novo lead"
+        const pipeline    = state.pipelines.find((p) => p.id === deal.pipelineId);
+        const currentStage = pipeline?.stages.find((s) => s.id === deal.stageId);
+        const isFirstStage = pipeline?.stages[0]?.id === deal.stageId;
+
+        if (isFirstStage && threadCount >= 2 && pipeline && pipeline.stages.length > 1) {
+          const nextStage = pipeline.stages[1];
+          state.moveDeal(deal.id, nextStage.id);
+        }
+
+        // Atualiza notes com historico de respostas
+        state.updateDeal(deal.id, {
+          notes: [
+            deal.notes ?? "",
+            `[SDR ${new Date().toLocaleDateString("pt-BR")}]: ${text.slice(0, 100)}`,
+          ].filter(Boolean).join(" | "),
+        });
+      }
+    }
   }
 
-  // Simula uma mensagem chegando quando canal é conectado (apenas para demonstração)
+  // Simula uma mensagem chegando quando canal e conectado
   useEffect(() => {
     if (!hydrated) return;
     connectedChannels.forEach((ch) => {
       const alreadyHas = convs.some((c) => c.channel === ch.type);
       if (!alreadyHas) {
-        const demoId = `demo-${ch.type}`;
-        const demoName = ch.type === "whatsapp" ? "Primeiro contato WA" : ch.type === "instagram" ? "Primeiro contato IG" : "Primeiro contato MSG";
+        const demoId   = `demo-${ch.type}`;
+        const chLabel  = CHANNEL_META[ch.type].label;
+        const demoName = `Novo lead ${chLabel}`;
+        const firstMsg = `Oi! Vim pelo ${chLabel}. Tenho interesse nos cursos de ingles!`;
+
         setConvs((cs) => [
           ...cs,
-          { id: demoId, contact: demoName, channel: ch.type, preview: "Mensagem de demonstracao", unread: 1, time: "agora" },
+          { id: demoId, contact: demoName, channel: ch.type, preview: firstMsg, unread: 1, time: "agora" },
         ]);
         setThreads((t) => ({
           ...t,
-          [demoId]: [{ from: "in", text: `Oi! Vim pelo ${ch.type === "whatsapp" ? "WhatsApp" : ch.type === "instagram" ? "Instagram" : "Messenger"}.`, time: "agora" }],
+          [demoId]: [{ from: "in", text: firstMsg, time: "agora" }],
         }));
+
+        // Registra no funil automaticamente
+        registerLeadInFunnel(demoName, ch.type, firstMsg);
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
