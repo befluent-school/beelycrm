@@ -1,26 +1,168 @@
 @import "tailwindcss";
 
+/*
+  Beely — Dark Premium design system.
+  Base grafite (#2b2b2b family), laranja #e59313 como realce. Dark-only.
+*/
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+
+  --background: #1c1c1c;
+  --surface: #232323;
+  --foreground: #f4f3f1;
+  --card: #2b2b2b;
+  --card-foreground: #f4f3f1;
+  --popover: #262626;
+  --popover-foreground: #f4f3f1;
+
+  --primary: #e59313;
+  --primary-foreground: #1a1305;
+
+  --secondary: #313131;
+  --secondary-foreground: #f4f3f1;
+
+  --muted: #2c2c2c;
+  --muted-foreground: #9b9893;
+
+  --accent: #3a2a10;
+  --accent-foreground: #f3a838;
+
+  --graphite-deep: #232323;
+  --graphite-deep-foreground: #f4f3f1;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --success: #34d27b;
+  --warning: #f0a02a;
+
+  --border: #393939;
+  --input: #3a3a3a;
+  --ring: #e59313;
+
+  --radius: 0.8rem;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-graphite-deep: var(--graphite-deep);
+  --color-graphite-deep-foreground: var(--graphite-deep-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-jakarta);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--border);
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
+  /* static layered background — no JS, no repaints */
+  background-image:
+    radial-gradient(ellipse 100% 55% at 50% -5%, #2e2e2e 0%, transparent 70%),
+    radial-gradient(ellipse 60% 40% at 80% 100%, color-mix(in srgb, #e59313 8%, transparent) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 35% at 10% 60%, color-mix(in srgb, #e59313 6%, transparent) 0%, transparent 70%);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
+
+h1, h2, h3, h4, h5, .font-display {
+  font-family: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 35%, transparent);
+  color: #fff;
+}
+
+/* Slim premium scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #4a4a4a transparent;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: #444; border-radius: 8px; }
+*::-webkit-scrollbar-thumb:hover { background: #555; }
+
+/* ─── Premium utilities ─────────────────────────────────── */
+
+/* Hairline gradient border + soft elevation for cards */
+.card-premium {
+  position: relative;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #ffffff 4%, transparent), transparent 60%),
+    var(--card);
+  border: 1px solid color-mix(in srgb, #ffffff 6%, transparent);
+  box-shadow: 0 1px 0 0 color-mix(in srgb, #ffffff 5%, transparent) inset,
+              0 18px 40px -24px rgba(0, 0, 0, 0.8);
+}
+.card-premium:hover {
+  border-color: color-mix(in srgb, var(--primary) 35%, transparent);
+}
+
+/* Orange glow accents */
+.glow-orange {
+  box-shadow: 0 8px 30px -8px color-mix(in srgb, var(--primary) 55%, transparent);
+}
+.text-glow {
+  text-shadow: 0 0 28px color-mix(in srgb, var(--primary) 45%, transparent);
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(120deg, #f8b34a, var(--primary) 60%, #c97a0a);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Subtle grid + radial mask, used by background layer */
+.bg-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, #ffffff 4%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, #ffffff 4%, transparent) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%);
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%);
+}
+
+/* Fine grain/noise overlay (SVG fractal noise) */
+.bg-noise {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* animate-rise só é aplicado em elementos que já existem no HTML estático */
+.animate-rise { animation: rise 0.5s ease-out forwards; }

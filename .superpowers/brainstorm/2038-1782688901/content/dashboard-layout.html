@@ -1,0 +1,165 @@
+<h2>Qual layout para o Dashboard de Métricas?</h2>
+<p class="subtitle">O Beely já tem um dashboard. Qual direção tomar para o novo módulo de Relatórios Avançados?</p>
+
+<div class="cards">
+
+  <!-- OPÇÃO A -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#0f172a;padding:16px;border-radius:8px;font-family:sans-serif;">
+        <!-- KPI Row -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
+          <div style="background:#1e293b;border-radius:6px;padding:10px;">
+            <div style="font-size:9px;color:#64748b;margin-bottom:4px;">TICKET MÉDIO</div>
+            <div style="font-size:16px;font-weight:700;color:#f59e0b;">R$ 4.200</div>
+            <div style="font-size:8px;color:#22c55e;">▲ +5%</div>
+          </div>
+          <div style="background:#1e293b;border-radius:6px;padding:10px;">
+            <div style="font-size:9px;color:#64748b;margin-bottom:4px;">CAC</div>
+            <div style="font-size:16px;font-weight:700;color:#f59e0b;">R$ 320</div>
+            <div style="font-size:8px;color:#22c55e;">▲ -8%</div>
+          </div>
+          <div style="background:#1e293b;border-radius:6px;padding:10px;">
+            <div style="font-size:9px;color:#64748b;margin-bottom:4px;">LTV</div>
+            <div style="font-size:16px;font-weight:700;color:#f59e0b;">R$ 18.400</div>
+            <div style="font-size:8px;color:#22c55e;">▲ +12%</div>
+          </div>
+          <div style="background:#1e293b;border-radius:6px;padding:10px;">
+            <div style="font-size:9px;color:#64748b;margin-bottom:4px;">ROI CAMPANHAS</div>
+            <div style="font-size:16px;font-weight:700;color:#f59e0b;">340%</div>
+            <div style="font-size:8px;color:#22c55e;">▲ +20pp</div>
+          </div>
+        </div>
+        <!-- Chart area -->
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;">
+          <div style="background:#1e293b;border-radius:6px;padding:10px;height:70px;">
+            <div style="font-size:9px;color:#94a3b8;margin-bottom:6px;">Receita vs Meta — 6 meses</div>
+            <div style="display:flex;align-items:flex-end;gap:3px;height:40px;">
+              <div style="width:12%;background:#f59e0b;height:60%;border-radius:2px 2px 0 0;"></div>
+              <div style="width:12%;background:#f59e0b;height:80%;border-radius:2px 2px 0 0;"></div>
+              <div style="width:12%;background:#f59e0b;height:70%;border-radius:2px 2px 0 0;"></div>
+              <div style="width:12%;background:#f59e0b;height:90%;border-radius:2px 2px 0 0;"></div>
+              <div style="width:12%;background:#f59e0b;height:100%;border-radius:2px 2px 0 0;"></div>
+              <div style="width:12%;background:#334155;height:95%;border-radius:2px 2px 0 0;border:1px dashed #f59e0b;"></div>
+            </div>
+          </div>
+          <div style="background:#1e293b;border-radius:6px;padding:10px;height:70px;">
+            <div style="font-size:9px;color:#94a3b8;margin-bottom:6px;">Conversão por etapa</div>
+            <div style="font-size:8px;color:#64748b;">Lead → Qual: 72%</div>
+            <div style="font-size:8px;color:#64748b;">Qual → Prop: 54%</div>
+            <div style="font-size:8px;color:#64748b;">Prop → Fech: 38%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Painel Executivo Unificado</h3>
+      <p>Todos os KPIs (Ticket Médio, CAC, LTV, ROI) em cards no topo + gráficos abaixo. Uma única página densa com visão completa do negócio. Ideal para gestores que precisam de snapshot rápido.</p>
+    </div>
+  </div>
+
+  <!-- OPÇÃO B -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#0f172a;padding:16px;border-radius:8px;font-family:sans-serif;">
+        <!-- Tabs -->
+        <div style="display:flex;gap:8px;margin-bottom:12px;border-bottom:1px solid #1e293b;padding-bottom:8px;">
+          <div style="font-size:9px;color:#f59e0b;border-bottom:2px solid #f59e0b;padding-bottom:4px;font-weight:700;">FINANCEIRO</div>
+          <div style="font-size:9px;color:#475569;">AQUISIÇÃO</div>
+          <div style="font-size:9px;color:#475569;">RETENÇÃO</div>
+          <div style="font-size:9px;color:#475569;">EQUIPE</div>
+        </div>
+        <!-- Financeiro tab content -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+          <div style="background:#1e293b;border-radius:6px;padding:10px;">
+            <div style="font-size:9px;color:#64748b;">Ticket Médio</div>
+            <div style="font-size:20px;font-weight:700;color:#f59e0b;">R$ 4.200</div>
+            <div style="background:#0f172a;border-radius:4px;height:30px;margin-top:6px;display:flex;align-items:flex-end;padding:2px;gap:2px;">
+              <div style="background:#f59e0b44;width:16%;height:50%;border-radius:1px;"></div>
+              <div style="background:#f59e0b44;width:16%;height:70%;border-radius:1px;"></div>
+              <div style="background:#f59e0b44;width:16%;height:60%;border-radius:1px;"></div>
+              <div style="background:#f59e0b;width:16%;height:90%;border-radius:1px;"></div>
+              <div style="background:#f59e0b;width:16%;height:100%;border-radius:1px;"></div>
+            </div>
+          </div>
+          <div style="background:#1e293b;border-radius:6px;padding:10px;">
+            <div style="font-size:9px;color:#64748b;">LTV / CAC Ratio</div>
+            <div style="font-size:20px;font-weight:700;color:#22c55e;">5,7x</div>
+            <div style="font-size:8px;color:#64748b;margin-top:4px;">LTV R$18.400 · CAC R$320</div>
+            <div style="background:#0f172a;border-radius:4px;height:8px;margin-top:8px;">
+              <div style="background:#22c55e;width:75%;height:100%;border-radius:4px;"></div>
+            </div>
+          </div>
+        </div>
+        <div style="background:#1e293b;border-radius:6px;padding:10px;">
+          <div style="font-size:9px;color:#94a3b8;margin-bottom:4px;">Receita Recorrente Mensal (MRR)</div>
+          <div style="display:flex;align-items:flex-end;gap:2px;height:35px;">
+            <div style="background:#f59e0b66;width:14%;height:55%;border-radius:2px 2px 0 0;"></div>
+            <div style="background:#f59e0b66;width:14%;height:75%;border-radius:2px 2px 0 0;"></div>
+            <div style="background:#f59e0b66;width:14%;height:65%;border-radius:2px 2px 0 0;"></div>
+            <div style="background:#f59e0b;width:14%;height:88%;border-radius:2px 2px 0 0;"></div>
+            <div style="background:#f59e0b;width:14%;height:95%;border-radius:2px 2px 0 0;"></div>
+            <div style="background:#f59e0b;width:14%;height:100%;border-radius:2px 2px 0 0;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Módulos Separados por Aba</h3>
+      <p>4 abas temáticas: Financeiro (Ticket, LTV, MRR), Aquisição (CAC, fontes, conversão), Retenção (churn, recorrência) e Equipe (ranking, metas). Cada aba aprofunda um tema sem sobrecarregar a tela.</p>
+    </div>
+  </div>
+
+  <!-- OPÇÃO C -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#0f172a;padding:16px;border-radius:8px;font-family:sans-serif;">
+        <!-- Sidebar nav -->
+        <div style="display:flex;gap:8px;">
+          <div style="background:#1e293b;border-radius:6px;padding:8px;width:70px;flex-shrink:0;">
+            <div style="font-size:8px;color:#f59e0b;font-weight:700;margin-bottom:6px;">REPORTS</div>
+            <div style="font-size:8px;color:#f59e0b;background:#f59e0b22;border-radius:3px;padding:3px 5px;margin-bottom:3px;">📊 Financeiro</div>
+            <div style="font-size:8px;color:#475569;padding:3px 5px;margin-bottom:3px;">🎯 CAC/ROI</div>
+            <div style="font-size:8px;color:#475569;padding:3px 5px;margin-bottom:3px;">🔁 Retenção</div>
+            <div style="font-size:8px;color:#475569;padding:3px 5px;margin-bottom:3px;">👥 Equipe</div>
+            <div style="font-size:8px;color:#475569;padding:3px 5px;">📅 Período</div>
+          </div>
+          <div style="flex:1;">
+            <!-- Filtro de período -->
+            <div style="display:flex;gap:4px;margin-bottom:8px;">
+              <div style="font-size:8px;background:#f59e0b;color:#000;border-radius:3px;padding:2px 6px;font-weight:700;">7d</div>
+              <div style="font-size:8px;background:#1e293b;color:#475569;border-radius:3px;padding:2px 6px;">30d</div>
+              <div style="font-size:8px;background:#1e293b;color:#475569;border-radius:3px;padding:2px 6px;">90d</div>
+              <div style="font-size:8px;background:#1e293b;color:#475569;border-radius:3px;padding:2px 6px;">Custom</div>
+            </div>
+            <!-- KPIs mini -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:6px;">
+              <div style="background:#1e293b;border-radius:4px;padding:6px;">
+                <div style="font-size:8px;color:#64748b;">Ticket Médio</div>
+                <div style="font-size:13px;font-weight:700;color:#f59e0b;">R$4.200</div>
+              </div>
+              <div style="background:#1e293b;border-radius:4px;padding:6px;">
+                <div style="font-size:8px;color:#64748b;">CAC</div>
+                <div style="font-size:13px;font-weight:700;color:#f59e0b;">R$320</div>
+              </div>
+            </div>
+            <!-- Mini chart -->
+            <div style="background:#1e293b;border-radius:4px;padding:6px;height:50px;display:flex;align-items:flex-end;gap:2px;">
+              <div style="background:#f59e0b55;width:14%;height:60%;border-radius:1px 1px 0 0;"></div>
+              <div style="background:#f59e0b55;width:14%;height:75%;border-radius:1px 1px 0 0;"></div>
+              <div style="background:#f59e0b;width:14%;height:90%;border-radius:1px 1px 0 0;"></div>
+              <div style="background:#f59e0b;width:14%;height:100%;border-radius:1px 1px 0 0;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Relatórios como Seção Própria (sidebar + filtros)</h3>
+      <p>Novo item "Relatórios Avançados" na sidebar com sub-navegação lateral por tema e filtro de período global (7d, 30d, 90d, custom). Dashboard e Relatórios ficam separados — um é operacional, o outro é analítico.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:16px;">Clique para selecionar. Você pode escolher mais de uma se quiser combinar ideias.</p>
