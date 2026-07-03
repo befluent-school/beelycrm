@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { REVENUE_SERIES, FUNNEL_SERIES } from "@/lib/demo-data";
+import { REVENUE_SERIES } from "@/lib/demo-data";
 
 const BRAND = "#E59313";
 const META_LINE = "#8a7560";
@@ -44,17 +44,17 @@ export function RevenueChart() {
   );
 }
 
-export function FunnelChart() {
+export function FunnelChartLive({ data }: { data: { stage: string; count: number; value: number }[] }) {
   return (
-    <ResponsiveContainer width="100%" height={260}>
-      <BarChart data={FUNNEL_SERIES} layout="vertical" margin={{ left: 30, right: 16 }}>
+    <ResponsiveContainer width="100%" height={Math.max(data.length * 44, 180)}>
+      <BarChart data={data} layout="vertical" margin={{ left: 30, right: 16 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-        <XAxis type="number" stroke="var(--muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
-        <YAxis type="category" dataKey="stage" stroke="var(--muted-foreground)" fontSize={12} width={90} tickLine={false} axisLine={false} />
+        <XAxis type="number" stroke="var(--muted-foreground)" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
+        <YAxis type="category" dataKey="stage" stroke="var(--muted-foreground)" fontSize={12} width={110} tickLine={false} axisLine={false} />
         <Tooltip
           cursor={{ fill: "var(--secondary)" }}
           contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 13 }}
-          formatter={(v, n) => (n === "value" ? brl(Number(v)) : v)}
+          formatter={(v, n) => (n === "Valor" ? brl(Number(v)) : v)}
         />
         <Bar dataKey="count" fill={BRAND} radius={[0, 6, 6, 0]} name="Negócios" />
       </BarChart>
