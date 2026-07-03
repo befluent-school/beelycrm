@@ -1,5 +1,6 @@
 "use client";
 
+import * as XLSX from "xlsx";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -93,11 +94,10 @@ function parseCSV(text: string): string[][] {
 
 /* ── Parser XLSX via SheetJS (carregado dinamicamente) ──────── */
 async function parseXLSX(buffer: ArrayBuffer): Promise<string[][]> {
-  // @ts-expect-error — xlsx não tem types perfeitos mas funciona
-  const XLSX = await import("xlsx");
-  const wb   = XLSX.read(buffer, { type: "array", cellText: true, cellDates: false });
-  const ws   = wb.Sheets[wb.SheetNames[0]];
-  const data: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+  const wb = XLSX.read(buffer, { type: "array", cellText: true, cellDates: false });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data: string[][] = XLSX.utils.sheet_to_json<any>(ws, { header: 1, defval: "" });
   return data.filter((r) => r.some((c) => String(c).trim()));
 }
 
