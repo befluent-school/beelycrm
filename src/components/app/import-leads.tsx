@@ -11,68 +11,164 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useStore, DEFAULT_OWNER } from "@/lib/store";
+import { useStore, DEFAULT_OWNER, type Contact } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-/* ── Campos do sistema ──────────────────────────────────────── */
+/* ── Campos mapeáveis do sistema ────────────────────────────────── */
 const SYSTEM_FIELDS = [
-  { key: "name",        label: "Nome do Lead",           required: true  },
-  { key: "phone",       label: "Telefone / Celular",      required: false },
-  { key: "email",       label: "E-mail",                  required: false },
-  { key: "source",      label: "Origem",                  required: false },
-  { key: "campaign",    label: "Campanha",                required: false },
-  { key: "stage",       label: "Etapa do Funil",          required: false },
-  { key: "owner",       label: "Responsavel",             required: false },
-  { key: "company",     label: "Empresa / Razao Social",  required: false },
-  { key: "product",     label: "Produto de Interesse",    required: false },
-  { key: "value",       label: "Valor (R$)",              required: false },
-  { key: "tags",        label: "Etiquetas (separadas ;)", required: false },
-  { key: "city",        label: "Cidade",                  required: false },
-  { key: "state",       label: "Estado",                  required: false },
-  { key: "notes",       label: "Anotacoes / Descricao",   required: false },
-  { key: "utm_source",  label: "UTM Source",              required: false },
-  { key: "utm_campaign",label: "UTM Campaign",            required: false },
+  // Identificação
+  { key: "name",               label: "Nome do Lead *",              required: true  },
+  { key: "phone",              label: "Telefone / Celular",          required: false },
+  { key: "email",              label: "E-mail",                      required: false },
+  { key: "source",             label: "Origem",                      required: false },
+  { key: "campaign",           label: "Campanha",                    required: false },
+  { key: "stage",              label: "Etapa do Funil",              required: false },
+  { key: "owner",              label: "Responsavel",                 required: false },
+  { key: "status",             label: "Status (Frio/Morno/Quente)",  required: false },
+  { key: "tags",               label: "Etiquetas (separadas ;)",     required: false },
+  { key: "firstNote",          label: "Primeira Anotacao",           required: false },
+  // Empresa / Produto
+  { key: "company",            label: "Razao Social",                required: false },
+  { key: "fantasyName",        label: "Nome Fantasia",               required: false },
+  { key: "product",            label: "Nome do Produto",             required: false },
+  { key: "productValue",       label: "Valor do Produto",            required: false },
+  { key: "productDesc",        label: "Descricao do Produto",        required: false },
+  // Endereco pessoal
+  { key: "cep",                label: "CEP",                         required: false },
+  { key: "country",            label: "Pais",                        required: false },
+  { key: "state",              label: "Estado",                      required: false },
+  { key: "city",               label: "Cidade",                      required: false },
+  { key: "neighborhood",       label: "Bairro",                      required: false },
+  { key: "street",             label: "Logradouro",                  required: false },
+  { key: "complement",         label: "Complemento",                 required: false },
+  { key: "number",             label: "Numero",                      required: false },
+  { key: "cpfCnpj",            label: "CPF / CNPJ",                  required: false },
+  // Endereco empresa
+  { key: "companyCep",         label: "CEP (Empresa)",               required: false },
+  { key: "companyCountry",     label: "Pais (Empresa)",              required: false },
+  { key: "companyState",       label: "Estado (Empresa)",            required: false },
+  { key: "companyCity",        label: "Cidade (Empresa)",            required: false },
+  { key: "companyNeighborhood",label: "Bairro (Empresa)",            required: false },
+  { key: "companyStreet",      label: "Logradouro (Empresa)",        required: false },
+  { key: "companyComplement",  label: "Complemento (Empresa)",       required: false },
+  { key: "companyNumber",      label: "Numero (Empresa)",            required: false },
+  // Meta Ads
+  { key: "metaAdId",           label: "Meta Ad Id",                  required: false },
+  { key: "metaAdName",         label: "Meta Ad Name",                required: false },
+  { key: "metaAdsetId",        label: "Meta Adset Id",               required: false },
+  { key: "metaAdsetName",      label: "Meta Adset Name",             required: false },
+  { key: "metaCampaignId",     label: "Meta Campaign Id",            required: false },
+  { key: "metaCampaignName",   label: "Meta Campaign Name",          required: false },
+  { key: "metaFormId",         label: "Meta Form Id",                required: false },
+  { key: "metaFormName",       label: "Meta Form Name",              required: false },
+  { key: "metaPageId",         label: "Meta Page Id",                required: false },
+  { key: "metaPageName",       label: "Meta Page Name",              required: false },
+  { key: "metaLeadgenId",      label: "Meta Leadgen Id",             required: false },
+  { key: "metaPlatform",       label: "Meta Platform",               required: false },
+  // UTM
+  { key: "utmUrl",             label: "UTM URL",                     required: false },
+  { key: "utmMedium",          label: "UTM Medium",                  required: false },
+  { key: "utmSource",          label: "UTM Source",                  required: false },
+  { key: "utmCampaign",        label: "UTM Campaign",                required: false },
+  { key: "utmTerm",            label: "UTM Term",                    required: false },
+  { key: "utmContent",         label: "UTM Content",                 required: false },
+  // Qualificacao
+  { key: "urgency",            label: "Principal Urgencia",          required: false },
+  { key: "investmentIntent",   label: "Investimento Pretendido",     required: false },
+  { key: "jobTitle",           label: "Cargo",                       required: false },
+  { key: "monthlyBudget",      label: "Opcao de Investimento Mensal",required: false },
+  { key: "contactPreference",  label: "Preferencia de Contato",      required: false },
+  { key: "mainChallenge",      label: "Maior Desafio com Ingles",    required: false },
+  { key: "sector",             label: "Setor Corporativo",           required: false },
+  { key: "classFrequency",     label: "Frequencia de Aulas",         required: false },
+  { key: "professionalMoment", label: "Momento Profissional",        required: false },
+  // Misc
+  { key: "externalId",         label: "ID Externo (CRM antigo)",     required: false },
+  { key: "registeredAt",       label: "Data de Cadastro",            required: false },
+  { key: "funnel",             label: "Funil de Origem",             required: false },
+  { key: "team",               label: "Equipe",                      required: false },
 ] as const;
 
 type FieldKey = (typeof SYSTEM_FIELDS)[number]["key"];
 
-/* ── Mapeamento automático ──────────────────────────────────── */
+/* ── Mapeamento automático (68 colunas da planilha Be Fluent) ──── */
 function guessMapping(header: string): FieldKey | "" {
-  const h = header.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  if (h.includes("nome do lead") || h.includes("nome do contato") || h === "nome" || (h.includes("name") && !h.includes("campaign") && !h.includes("produto") && !h.includes("product"))) return "name";
-  if (h.includes("celular") || h.includes("telefone") || (h.includes("phone") && !h.includes("campaign"))) return "phone";
-  if (h.includes("mail")) return "email";
-  if (h.includes("campanha") || h.includes("campaign")) return "campaign";
-  if (h.includes("etapa") || h.includes("stage") || h.includes("step") || h.includes("funil")) return "stage";
-  if (h.includes("origem") || (h.includes("source") && !h.includes("utm"))) return "source";
-  if (h.includes("respons") || h.includes("owner") || h.includes("vendedor")) return "owner";
-  if (h.includes("empresa") || h.includes("company") || h.includes("razao") || h.includes("fantasia")) return "company";
-  if (h.includes("produto") || h.includes("nome do produto")) return "product";
-  if (h.includes("valor") || (h.includes("value") && !h.includes("utm"))) return "value";
-  if (h.includes("etiqueta") || h.includes("tag")) return "tags";
-  if (h.includes("cidade") || h.includes("city")) return "city";
-  if (h.includes("estado") || (h.includes("state") && !h.includes("utm"))) return "state";
-  if (h.includes("anota") || h.includes("descri") || h.includes("notes") || h.includes("observ") || h.includes("primeira anota")) return "notes";
-  if (h.includes("utm_source") || h === "utm source") return "utm_source";
-  if (h.includes("utm_campaign") || h === "utm campaign") return "utm_campaign";
+  const h = header.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+  // Identificacao
+  if (h === "nome do lead" || h === "nome do contato 1" || (h === "nome" && !h.includes("produto") && !h.includes("campanha") && !h.includes("fantasy") && !h.includes("fantasia"))) return "name";
+  if (h.includes("celular") || (h === "telefone" && !h.includes("empresa"))) return "phone";
+  if (h.includes("e-mail") || h.includes("email")) return "email";
+  if (h === "origem") return "source";
+  if (h === "campanha") return "campaign";
+  if (h === "etapa") return "stage";
+  if (h.startsWith("responsavel") || h === "responsavel 1") return "owner";
+  if (h === "status") return "status";
+  if (h.startsWith("etiqueta")) return "tags";
+  if (h === "primeira anotacao") return "firstNote";
+  // Empresa
+  if (h === "razao social") return "company";
+  if (h === "nome fantasia") return "fantasyName";
+  if (h.startsWith("nome do produto")) return "product";
+  if (h.startsWith("valor do produto")) return "productValue";
+  if (h.startsWith("descricao do produto")) return "productDesc";
+  // Endereco pessoal
+  if (h === "cep") return "cep";
+  if (h === "pais") return "country";
+  if (h === "estado") return "state";
+  if (h === "cidade") return "city";
+  if (h === "bairro") return "neighborhood";
+  if (h === "logradouro") return "street";
+  if (h === "complemento") return "complement";
+  if (h === "numero" && !h.includes("empresa")) return "number";
+  if (h === "cpf/cnpj" || h === "cpf" || h === "cnpj") return "cpfCnpj";
+  // Endereco empresa
+  if (h === "cep (empresa)") return "companyCep";
+  if (h === "pais (empresa)") return "companyCountry";
+  if (h === "estado (empresa)") return "companyState";
+  if (h === "cidade (empresa)") return "companyCity";
+  if (h === "bairro (empresa)") return "companyNeighborhood";
+  if (h === "logradouro (empresa)") return "companyStreet";
+  if (h === "complemento (empresa)") return "companyComplement";
+  if (h === "numero (empresa)") return "companyNumber";
+  // Meta Ads
+  if (h === "meta ads ad id") return "metaAdId";
+  if (h === "meta ads ad name") return "metaAdName";
+  if (h === "meta ads adset id") return "metaAdsetId";
+  if (h === "meta ads adset name") return "metaAdsetName";
+  if (h === "meta ads campaign id") return "metaCampaignId";
+  if (h === "meta ads campaign name") return "metaCampaignName";
+  if (h === "meta ads form id") return "metaFormId";
+  if (h === "meta ads form name") return "metaFormName";
+  if (h === "meta ads page id") return "metaPageId";
+  if (h === "meta ads page name") return "metaPageName";
+  if (h === "meta ads leadgen id") return "metaLeadgenId";
+  if (h === "meta ads platform") return "metaPlatform";
+  // UTM
+  if (h === "utm url") return "utmUrl";
+  if (h === "utm medium") return "utmMedium";
+  if (h === "utm source") return "utmSource";
+  if (h === "utm campaign") return "utmCampaign";
+  if (h === "utm term") return "utmTerm";
+  if (h === "utm content") return "utmContent";
+  // Qualificacao
+  if (h === "principal urgencia") return "urgency";
+  if (h.includes("pretende investir")) return "investmentIntent";
+  if (h === "cargo") return "jobTitle";
+  if (h.includes("opcao de investimento") || h.includes("investimento mensal")) return "monthlyBudget";
+  if (h.includes("prefere iniciar") || h.includes("preferencia de contato")) return "contactPreference";
+  if (h.includes("desafio") || h.includes("urgencia com o ingles")) return "mainChallenge";
+  if (h.includes("setor corporativo") || h.includes("setor")) return "sector";
+  if (h.includes("frequencia de aulas") || h.includes("frequencia")) return "classFrequency";
+  if (h.includes("momento profissional")) return "professionalMoment";
+  // Misc
+  if (h === "id do lead") return "externalId";
+  if (h === "data de cadastro") return "registeredAt";
+  if (h === "funil") return "funnel";
+  if (h === "equipe") return "team";
   return "";
 }
 
-/* ── Template CSV ───────────────────────────────────────────── */
-const TEMPLATE_HEADERS = [
-  "Nome do Lead", "Celular do Contato 1", "E-mail do Contato 1",
-  "Origem", "Campanha", "Etapa", "Responsavel 1",
-  "Razao Social", "Nome do Produto 1", "Valor do Produto 1",
-  "Etiqueta 1", "Cidade", "Estado", "Primeira Anotacao",
-  "UTM Source", "UTM Campaign",
-];
-const TEMPLATE_SAMPLE = [
-  ["Shynaida Linhares", "+5598981606187", "shynaida@email.com", "Indicacao de Aluno", "", "Follow Up D1", "Carlos Augusto", "", "Curso Regular - 1x/semana", "303.45", "quente", "Sao Luis", "MA", "Interessada no curso avancado", "", ""],
-  ["Isabelle Costa", "+5584987723431", "", "Indicacao de Aluno", "", "Novo lead", "Carlos Augusto", "", "Curso Regular - 1x/semana", "357", "", "Natal", "RN", "", "", ""],
-  ["Maria Silva", "+55 11 99999-0000", "maria@empresa.com", "WhatsApp", "Black Friday 2026", "Em contato", "SDR 1", "Empresa X", "Imersao Intensiva", "497", "vip;quente", "Sao Paulo", "SP", "Veio pelo anuncio do Instagram", "instagram", "imersao_2026"],
-];
-
-/* ── Parser CSV robusto (suporta , e ;) ─────────────────────── */
+/* ── Parser CSV (vírgula ou ponto-e-vírgula, BOM, CRLF) ────────── */
 function parseCSV(text: string): string[][] {
   const cleaned = text.replace(/^﻿/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const rows: string[][] = [];
@@ -92,16 +188,36 @@ function parseCSV(text: string): string[][] {
   return rows.filter((r) => r.some((c) => c.trim()));
 }
 
-/* ── Parser XLSX via SheetJS (carregado dinamicamente) ──────── */
-async function parseXLSX(buffer: ArrayBuffer): Promise<string[][]> {
-  const wb = XLSX.read(buffer, { type: "array", cellText: true, cellDates: false });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data: string[][] = XLSX.utils.sheet_to_json<any>(ws, { header: 1, defval: "" });
-  return data.filter((r) => r.some((c) => String(c).trim()));
-}
+/* ── Modelo CSV para download ───────────────────────────────────── */
+const TEMPLATE_HEADERS = [
+  "ID do Lead","Nome do Lead","Nome do Contato 1","Celular do Contato 1","E-mail do Contato 1",
+  "Origem","Campanha","Funil","Etapa","Status","Equipe","Responsavel 1","Etiqueta 1",
+  "Primeira Anotacao","CEP","Estado","Cidade","Bairro","Logradouro","Complemento","Numero","CPF/CNPJ",
+  "Razao Social","Nome Fantasia",
+  "Nome do Produto 1","Valor do Produto 1","Descricao do Produto 1",
+  "Meta Ads Ad Id","Meta Ads Ad Name","Meta Ads Adset Id","Meta Ads Adset Name",
+  "Meta Ads Campaign Id","Meta Ads Campaign Name","Meta Ads Form Id","Meta Ads Form Name",
+  "Meta Ads Page Id","Meta Ads Page Name","Meta Ads Leadgen Id","Meta Ads Platform",
+  "UTM URL","UTM Medium","UTM Source","UTM Campaign","UTM Term","UTM Content",
+  "Principal urgencia","Quanto voce pretende investir no seu desenvolvimento em ingles?","Cargo",
+  "Qual dessas opcoes de investimento mensal se encaixa melhor no seu planejamento?",
+  "Como voce prefere iniciar o seu contato com a gente?",
+  "Pensando na sua rotina atual qual e o seu maior desafio ou urgencia com o ingles no trabalho hoje?",
+  "O nosso material muda de acordo com o seu setor corporativo. Qual opcao melhor define voce hoje?",
+  "Para enviarmos a tabela certa no seu WhatsApp qual frequencia de aulas voce tem mais curiosidade em conhecer?",
+  "Qual das opcoes abaixo melhor descreve o seu momento profissional atual?",
+];
+const TEMPLATE_SAMPLE = [
+  ["6a18e22712708674","Thamires Esposito","Thamires Esposito","+5512981166320","",
+   "Instagram","INSPIRE | TESTE CRIATIVOS","Comercial","Proposta Enviada","Frio","FUNDADOR","Carlos Augusto","Forms Ads",
+   "","","SP","Sao Jose dos Campos","","","","","",
+   "","",
+   "Curso Regular - 1x/semana","303.45","",
+   "","","","Referencia 2","","INSPIRE | TESTE CRIATIVOS","","INSPIRE | 1","","Be Fluent School","","ig",
+   "","","","","","",
+   "quero receber informacoes no whatsapp","","executivo clt","plano bronze r$ 357/mes","","","","",""],
+];
 
-/* ── Componente principal ───────────────────────────────────── */
 export function ImportLeads() {
   const router = useRouter();
   const { addContacts, addDeal, pipelines } = useStore();
@@ -114,22 +230,16 @@ export function ImportLeads() {
   const [dragOver, setDragOver] = useState(false);
   const [fileName, setFileName] = useState("");
 
-  /* ── Download modelo ─────────────────────────────────────── */
   function downloadTemplate() {
     const bom = "﻿";
-    const csv = [
-      TEMPLATE_HEADERS.join(","),
-      ...TEMPLATE_SAMPLE.map((r) => r.map((v) => v.includes(",") ? `"${v}"` : v).join(",")),
-    ].join("\n");
+    const csv = [TEMPLATE_HEADERS.join(","), ...TEMPLATE_SAMPLE.map((r) => r.map((v) => v.includes(",") ? `"${v}"` : v).join(","))].join("\n");
     const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8;" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href = url; a.download = "modelo-befluent-leads.csv"; a.click();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "modelo-befluent-leads.csv"; a.click();
     URL.revokeObjectURL(url);
-    toast.success("Modelo baixado! Preencha e importe aqui.");
+    toast.success("Modelo baixado!");
   }
 
-  /* ── Processa arquivo (CSV ou XLSX) ─────────────────────── */
   async function handleFile(file: File) {
     setLoading(true);
     setFileName(file.name);
@@ -139,21 +249,19 @@ export function ImportLeads() {
 
       if (isXLSX) {
         const buffer = await file.arrayBuffer();
-        parsed = await parseXLSX(buffer);
-        // Converte todos os valores para string
-        parsed = parsed.map((r) => r.map((c) => String(c ?? "").trim()));
+        const wb = XLSX.read(buffer, { type: "array", cellText: true, cellDates: false });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const raw: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        parsed = raw.map((r) => r.map((c) => String(c ?? "").trim()));
       } else {
         const text = await file.text();
         parsed = parseCSV(text);
       }
 
-      if (parsed.length < 2) {
-        toast.error("Arquivo vazio ou sem dados suficientes.");
-        setLoading(false);
-        return;
-      }
+      if (parsed.length < 2) { toast.error("Arquivo vazio ou sem dados."); setLoading(false); return; }
 
-      const hdr      = parsed[0].map((h) => String(h).trim());
+      const hdr = parsed[0].map((h) => String(h).trim());
       const dataRows = parsed.slice(1).filter((r) => r.some((c) => String(c).trim()));
 
       setHeaders(hdr);
@@ -164,68 +272,149 @@ export function ImportLeads() {
       setMapping(m);
 
       const mappedAuto = Object.values(m).filter(Boolean).length;
-      toast.success(`${dataRows.length} leads detectados — ${mappedAuto} colunas mapeadas automaticamente.`);
+      toast.success(`${dataRows.length} leads detectados — ${mappedAuto}/${hdr.length} colunas mapeadas.`);
     } catch (err) {
       console.error(err);
-      toast.error("Erro ao ler o arquivo. Verifique se nao esta corrompido.");
+      toast.error("Erro ao ler o arquivo.");
     }
     setLoading(false);
   }
 
-  /* ── Importar ────────────────────────────────────────────── */
   function doImport() {
-    const nameCol = Object.entries(mapping).find(([, v]) => v === "name")?.[0];
-    if (nameCol === undefined) { toast.error("Mapeie a coluna de Nome do Lead."); return; }
+    const nameColEntry = Object.entries(mapping).find(([, v]) => v === "name");
+    if (!nameColEntry) { toast.error("Mapeie a coluna Nome do Lead."); return; }
 
-    const colFor = (key: FieldKey) => {
+    const colFor = (key: FieldKey): number => {
       const e = Object.entries(mapping).find(([, v]) => v === key);
       return e ? Number(e[0]) : -1;
     };
-    const cols = Object.fromEntries(SYSTEM_FIELDS.map((f) => [f.key, colFor(f.key)])) as Record<FieldKey, number>;
-    const get  = (r: string[], key: FieldKey) => cols[key] >= 0 ? (String(r[cols[key]] ?? "")).trim() : "";
+    const get = (r: string[], key: FieldKey) => {
+      const idx = colFor(key);
+      return idx >= 0 ? String(r[idx] ?? "").trim() : "";
+    };
 
     const pipeline     = pipelines[0];
     const stages       = pipeline?.stages ?? [];
     const newLeadStage = stages.find((s) => s.name.toLowerCase().includes("novo") || s.name.toLowerCase().includes("new")) ?? stages[0];
 
-    const items = rows.map((r) => {
+    let imported = 0;
+    let skipped  = 0;
+
+    const contactsToAdd: Omit<Contact, "id">[] = [];
+    const dealsToAdd: Parameters<typeof addDeal>[0][] = [];
+
+    for (const r of rows) {
       const name = get(r, "name");
-      if (!name) return null;
+      if (!name) { skipped++; continue; }
+
       const stageRaw    = get(r, "stage");
       const matchStage  = stageRaw
-        ? stages.find((s) => s.name.toLowerCase().includes(stageRaw.toLowerCase())) ?? newLeadStage
+        ? (stages.find((s) => s.name.toLowerCase().includes(stageRaw.toLowerCase())) ?? newLeadStage)
         : newLeadStage;
-      return {
-        contact: {
-          name, email: get(r, "email"), phone: get(r, "phone"),
-          company: get(r, "company"), source: get(r, "source") || "Importacao",
-          score: 0, owner: get(r, "owner") || DEFAULT_OWNER,
-          tags: [
-            ...get(r, "tags").split(";").map((t) => t.trim()).filter(Boolean),
-            ...(get(r, "campaign") ? [`camp:${get(r, "campaign")}`] : []),
-          ],
-        },
-        deal: pipeline && matchStage ? {
-          title: name, pipelineId: pipeline.id, stageId: matchStage.id, contact: name,
-          owner: get(r, "owner") || DEFAULT_OWNER,
-          value: parseFloat(get(r, "value").replace(",", ".")) || 0,
-          tags:  get(r, "tags").split(";").map((t) => t.trim()).filter(Boolean),
-          notes: [
-            get(r, "notes"),
-            get(r, "product")    ? `Produto: ${get(r, "product")}`          : "",
-            get(r, "city")       ? `Local: ${get(r, "city")}/${get(r, "state")}` : "",
-            get(r, "utm_source") ? `UTM: ${get(r, "utm_source")} / ${get(r, "utm_campaign")}` : "",
-          ].filter(Boolean).join(" | "),
-        } : null,
-      };
-    }).filter((x): x is NonNullable<typeof x> => x !== null && !!x.contact.name);
 
-    if (items.length === 0) { toast.error("Nenhum lead valido encontrado."); return; }
+      const tagsRaw  = get(r, "tags");
+      const campaign = get(r, "campaign");
+      const tags     = [
+        ...tagsRaw.split(";").map((t) => t.trim()).filter(Boolean),
+        ...(campaign ? [`camp:${campaign}`] : []),
+      ];
 
-    addContacts(items.map((i) => i.contact));
-    if (pipeline) items.forEach((i) => { if (i.deal) addDeal(i.deal); });
+      contactsToAdd.push({
+        name,
+        phone:               get(r, "phone"),
+        email:               get(r, "email"),
+        source:              get(r, "source") || "Importacao",
+        campaign:            campaign,
+        funnel:              get(r, "funnel"),
+        stage:               stageRaw,
+        status:              get(r, "status"),
+        team:                get(r, "team"),
+        owner:               get(r, "owner") || DEFAULT_OWNER,
+        score:               0,
+        tags,
+        firstNote:           get(r, "firstNote"),
+        company:             get(r, "company"),
+        fantasyName:         get(r, "fantasyName"),
+        cpfCnpj:             get(r, "cpfCnpj"),
+        cep:                 get(r, "cep"),
+        country:             get(r, "country"),
+        state:               get(r, "state"),
+        city:                get(r, "city"),
+        neighborhood:        get(r, "neighborhood"),
+        street:              get(r, "street"),
+        complement:          get(r, "complement"),
+        number:              get(r, "number"),
+        companyCep:          get(r, "companyCep"),
+        companyCountry:      get(r, "companyCountry"),
+        companyState:        get(r, "companyState"),
+        companyCity:         get(r, "companyCity"),
+        companyNeighborhood: get(r, "companyNeighborhood"),
+        companyStreet:       get(r, "companyStreet"),
+        companyComplement:   get(r, "companyComplement"),
+        companyNumber:       get(r, "companyNumber"),
+        product:             get(r, "product"),
+        productValue:        parseFloat(get(r, "productValue").replace(",", ".")) || undefined,
+        productDesc:         get(r, "productDesc"),
+        metaAdId:            get(r, "metaAdId"),
+        metaAdName:          get(r, "metaAdName"),
+        metaAdsetId:         get(r, "metaAdsetId"),
+        metaAdsetName:       get(r, "metaAdsetName"),
+        metaCampaignId:      get(r, "metaCampaignId"),
+        metaCampaignName:    get(r, "metaCampaignName"),
+        metaFormId:          get(r, "metaFormId"),
+        metaFormName:        get(r, "metaFormName"),
+        metaPageId:          get(r, "metaPageId"),
+        metaPageName:        get(r, "metaPageName"),
+        metaLeadgenId:       get(r, "metaLeadgenId"),
+        metaPlatform:        get(r, "metaPlatform"),
+        utmUrl:              get(r, "utmUrl"),
+        utmMedium:           get(r, "utmMedium"),
+        utmSource:           get(r, "utmSource"),
+        utmCampaign:         get(r, "utmCampaign"),
+        utmTerm:             get(r, "utmTerm"),
+        utmContent:          get(r, "utmContent"),
+        urgency:             get(r, "urgency"),
+        investmentIntent:    get(r, "investmentIntent"),
+        jobTitle:            get(r, "jobTitle"),
+        monthlyBudget:       get(r, "monthlyBudget"),
+        contactPreference:   get(r, "contactPreference"),
+        mainChallenge:       get(r, "mainChallenge"),
+        sector:              get(r, "sector"),
+        classFrequency:      get(r, "classFrequency"),
+        professionalMoment:  get(r, "professionalMoment"),
+        externalId:          get(r, "externalId"),
+        registeredAt:        get(r, "registeredAt"),
+      });
 
-    toast.success(`${items.length} leads importados para o funil "${pipeline?.name ?? "Funil de Vendas"}"!`);
+      if (pipeline && matchStage) {
+        const notes = [
+          get(r, "firstNote"),
+          get(r, "product")    ? `Produto: ${get(r, "product")} (R$ ${get(r, "productValue")})` : "",
+          get(r, "city")       ? `Local: ${get(r, "city")}/${get(r, "state")}` : "",
+          get(r, "urgency")    ? `Urgencia: ${get(r, "urgency")}` : "",
+          get(r, "jobTitle")   ? `Cargo: ${get(r, "jobTitle")}` : "",
+          get(r, "metaCampaignName") ? `Meta Campaign: ${get(r, "metaCampaignName")}` : "",
+          get(r, "utmSource")  ? `UTM: ${get(r, "utmSource")} / ${get(r, "utmCampaign")}` : "",
+        ].filter(Boolean).join(" | ");
+
+        dealsToAdd.push({
+          title:      name,
+          pipelineId: pipeline.id,
+          stageId:    matchStage.id,
+          contact:    name,
+          owner:      get(r, "owner") || DEFAULT_OWNER,
+          value:      parseFloat(get(r, "productValue").replace(",", ".")) || 0,
+          tags,
+          notes,
+        });
+      }
+      imported++;
+    }
+
+    addContacts(contactsToAdd);
+    dealsToAdd.forEach((d) => addDeal(d));
+
+    toast.success(`${imported} leads importados${skipped ? ` (${skipped} sem nome ignorados)` : ""}!`);
     router.push("/pipeline");
   }
 
@@ -234,63 +423,35 @@ export function ImportLeads() {
 
   return (
     <div className="space-y-6">
-      {/* Layout: 2 colunas principais apenas no mapping, senão 1 coluna */}
       <div className="grid gap-6 xl:grid-cols-3">
-
         {/* Coluna principal */}
         <div className="space-y-5 xl:col-span-2">
 
-          {/* Step 1 — Modelo */}
+          {/* Step 1 */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileSpreadsheet className="size-5 text-primary" /> 1. Baixe o modelo
               </CardTitle>
               <CardDescription>
-                Formato compativel com o seu CRM atual. Abra no Excel ou Google Sheets, cole seus leads e importe aqui.
+                Compativel com o export do seu CRM atual (68 colunas). Abra no Excel, cole seus leads e importe aqui.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent>
               <Button onClick={downloadTemplate} variant="outline" className="gap-2">
                 <Download className="size-4" /> Baixar modelo (.csv)
               </Button>
-
-              {/* Tabela de preview do modelo — scroll horizontal */}
-              <div className="overflow-x-auto rounded-xl border border-border">
-                <table className="min-w-full text-[11px]">
-                  <thead>
-                    <tr className="bg-white/[0.04]">
-                      {TEMPLATE_HEADERS.map((h) => (
-                        <th key={h} className="whitespace-nowrap border-b border-border px-3 py-2 text-left font-semibold text-muted-foreground">
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {TEMPLATE_SAMPLE.slice(0, 2).map((r, i) => (
-                      <tr key={i} className="border-b border-border/50 last:border-0">
-                        {r.map((c, j) => (
-                          <td key={j} className="whitespace-nowrap px-3 py-2 text-muted-foreground/70">
-                            {c || <span className="text-muted-foreground/30">—</span>}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             </CardContent>
           </Card>
 
-          {/* Step 2 — Upload */}
+          {/* Step 2 */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Upload className="size-5 text-primary" /> 2. Envie seu arquivo
               </CardTitle>
               <CardDescription>
-                Aceita <strong>.xlsx</strong> (Excel) e <strong>.csv</strong> — exportados do seu CRM, Excel ou Google Sheets.
+                Aceita <strong>.xlsx</strong> (Excel) e <strong>.csv</strong>. Duplicatas sao ignoradas automaticamente.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -304,27 +465,20 @@ export function ImportLeads() {
                 onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) handleFile(f); }}
               >
                 {loading ? (
-                  <>
-                    <Loader2 className="size-8 animate-spin text-primary" />
-                    <p className="text-sm text-muted-foreground">Processando {fileName}...</p>
-                  </>
+                  <><Loader2 className="size-8 animate-spin text-primary" /><p className="text-sm text-muted-foreground">Processando {fileName}...</p></>
                 ) : rows.length > 0 ? (
                   <>
-                    <div className="flex size-14 items-center justify-center rounded-2xl bg-green-500/10">
-                      <CheckCircle2 className="size-7 text-green-400" />
-                    </div>
+                    <CheckCircle2 className="size-9 text-green-400" />
                     <div>
-                      <p className="font-display font-semibold text-green-400">{rows.length} leads carregados</p>
-                      <p className="text-xs text-muted-foreground">{fileName} · clique para trocar o arquivo</p>
+                      <p className="font-semibold text-green-400">{rows.length} leads carregados</p>
+                      <p className="text-xs text-muted-foreground">{fileName} · clique para trocar</p>
                     </div>
                   </>
                 ) : (
                   <>
-                    <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10">
-                      <Upload className="size-7 text-primary" />
-                    </div>
+                    <Upload className="size-9 text-primary" />
                     <div>
-                      <p className="font-display font-semibold">Clique ou arraste o arquivo aqui</p>
+                      <p className="font-semibold">Clique ou arraste o arquivo aqui</p>
                       <p className="mt-1 text-xs text-muted-foreground">Suporta <strong>.xlsx</strong> (Excel) e <strong>.csv</strong></p>
                     </div>
                     <div className="flex gap-2">
@@ -343,7 +497,7 @@ export function ImportLeads() {
             </CardContent>
           </Card>
 
-          {/* Step 3 — Mapeamento */}
+          {/* Step 3 */}
           {headers.length > 0 && (
             <Card>
               <CardHeader>
@@ -353,8 +507,8 @@ export function ImportLeads() {
                       <Table2 className="size-5 text-primary" /> 3. Confirme o mapeamento
                     </CardTitle>
                     <CardDescription>
-                      {mappedCount} de {headers.length} colunas mapeadas automaticamente.
-                      {!hasName && <span className="ml-1 font-medium text-destructive">Mapeie a coluna Nome (obrigatoria).</span>}
+                      {mappedCount} de {headers.length} colunas mapeadas.
+                      {!hasName && <span className="ml-1 font-medium text-destructive">Mapeie o Nome (obrigatorio).</span>}
                     </CardDescription>
                   </div>
                   <Button variant="ghost" size="sm" className="gap-1.5 shrink-0" onClick={() => setPreview((v) => !v)}>
@@ -367,54 +521,45 @@ export function ImportLeads() {
                   <div
                     key={i}
                     className={cn(
-                      "flex items-center gap-2 rounded-lg border px-3 py-2 transition-colors",
+                      "flex items-center gap-2 rounded-lg border px-3 py-2",
                       mapping[i] ? "border-primary/25 bg-primary/[0.03]" : "border-border"
                     )}
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{h || `Coluna ${i + 1}`}</p>
-                      {preview && rows[0]?.[i] && (
-                        <p className="truncate text-[10px] text-muted-foreground">ex: {rows[0][i]}</p>
-                      )}
+                      {preview && rows[0]?.[i] && <p className="truncate text-[10px] text-muted-foreground">ex: {rows[0][i]}</p>}
                     </div>
                     <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
                     <select
                       value={mapping[i] ?? ""}
                       onChange={(e) => setMapping((m) => ({ ...m, [i]: e.target.value as FieldKey | "" }))}
                       className={cn(
-                        "h-9 w-48 shrink-0 rounded-md border bg-background px-2 text-sm outline-none",
+                        "h-9 w-56 shrink-0 rounded-md border bg-background px-2 text-sm outline-none",
                         mapping[i] ? "border-primary/40 text-foreground" : "border-input text-muted-foreground"
                       )}
                     >
                       <option value="">Ignorar</option>
                       {SYSTEM_FIELDS.map((f) => (
-                        <option key={f.key} value={f.key}>{f.label}{f.required ? " *" : ""}</option>
+                        <option key={f.key} value={f.key}>{f.label}</option>
                       ))}
                     </select>
                   </div>
                 ))}
-
                 <div className="pt-3">
                   <Button onClick={doImport} disabled={!hasName} className="w-full gap-2" size="lg">
                     <CheckCircle2 className="size-4" /> Importar {rows.length} leads para o funil
                   </Button>
-                  {!hasName && (
-                    <p className="mt-2 text-center text-xs text-muted-foreground">
-                      Selecione "Nome do Lead" em alguma coluna para habilitar.
-                    </p>
-                  )}
+                  {!hasName && <p className="mt-2 text-center text-xs text-muted-foreground">Selecione "Nome do Lead" em alguma coluna.</p>}
                 </div>
               </CardContent>
             </Card>
           )}
         </div>
 
-        {/* Coluna lateral — sem sticky, sem sobreposição */}
+        {/* Sidebar */}
         <div className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Pre-visualizacao</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle className="text-base">Pre-visualizacao</CardTitle></CardHeader>
             <CardContent>
               {rows.length === 0 ? (
                 <div className="flex flex-col items-center gap-3 py-8 text-center">
@@ -432,7 +577,7 @@ export function ImportLeads() {
                   {rows.slice(0, 6).map((r, i) => {
                     const nC = Object.entries(mapping).find(([, v]) => v === "name")?.[0];
                     const pC = Object.entries(mapping).find(([, v]) => v === "phone")?.[0];
-                    const name  = nC !== undefined ? r[Number(nC)]  : r[0];
+                    const name  = nC !== undefined ? r[Number(nC)] : r[0];
                     const phone = pC !== undefined ? r[Number(pC)] : "";
                     return (
                       <div key={i} className="rounded-lg border border-border bg-secondary/20 px-3 py-2">
@@ -449,21 +594,15 @@ export function ImportLeads() {
 
           {pipelines[0] && (
             <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Destino no funil</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle className="text-sm">Destino no funil</CardTitle></CardHeader>
               <CardContent className="space-y-2">
                 <p className="font-semibold text-sm">{pipelines[0].name}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {pipelines[0].stages.map((s) => (
-                    <span key={s.id} className="rounded-full border border-border bg-secondary/30 px-2 py-0.5 text-[10px]">
-                      {s.name}
-                    </span>
+                    <span key={s.id} className="rounded-full border border-border bg-secondary/30 px-2 py-0.5 text-[10px]">{s.name}</span>
                   ))}
                 </div>
-                <p className="text-[10px] text-muted-foreground">
-                  Se "Etapa" for mapeada, o lead vai para a etapa correspondente. Caso contrario, vai para a primeira etapa.
-                </p>
+                <p className="text-[10px] text-muted-foreground">Duplicatas (mesmo telefone, e-mail ou nome) sao ignoradas automaticamente.</p>
               </CardContent>
             </Card>
           )}

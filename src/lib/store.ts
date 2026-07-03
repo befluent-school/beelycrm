@@ -22,26 +22,108 @@ export interface Deal {
   value: number;
   pipelineId: string;
   stageId: string;
-  contact: string;
+  contact: string;       // nome do contato (chave de ligacao)
+  contactId?: string;    // id do contato (ligacao direta)
   owner: string;
   tags?: string[];
   status: DealStatus;
   lostReason?: string;
   notes?: string;
   createdAt: string;
+  stageEnteredAt?: string;  // quando entrou na etapa atual (para calcular temperatura)
   history?: { ts: string; text: string }[];
 }
+
+/** Temperatura do lead com base em dias na etapa atual */
+export type LeadTemp = "hot" | "warm" | "cold";
+export function dealTemperature(deal: Deal, hotDays = 3, coldDays = 10): LeadTemp {
+  const ref = deal.stageEnteredAt ?? deal.createdAt;
+  const days = (Date.now() - new Date(ref).getTime()) / 86_400_000;
+  if (days <= hotDays) return "hot";
+  if (days <= coldDays) return "warm";
+  return "cold";
+}
+
 export interface Contact {
   id: string;
   name: string;
   email: string;
   phone: string;
-  company: string;
-  source: string;
+  company: string;        // Razao Social
+  fantasyName?: string;   // Nome Fantasia
+  source: string;         // Origem
+  campaign?: string;      // Campanha
+  funnel?: string;        // Funil
+  stage?: string;         // Etapa
+  status?: string;        // Status (Frio/Morno/Quente)
+  team?: string;          // Equipe
   score: number;
   tags: string[];
-  owner: string;
+  owner: string;          // Responsavel 1
+  // Endereco
+  cep?: string;
+  country?: string;
+  state?: string;
+  city?: string;
+  neighborhood?: string;
+  street?: string;
+  complement?: string;
+  number?: string;
+  // Endereco empresa
+  companyCep?: string;
+  companyCountry?: string;
+  companyState?: string;
+  companyCity?: string;
+  companyNeighborhood?: string;
+  companyStreet?: string;
+  companyComplement?: string;
+  companyNumber?: string;
+  // Documento
+  cpfCnpj?: string;
+  // Produto
+  product?: string;       // Nome do Produto 1
+  productValue?: number;  // Valor do Produto 1
+  productDesc?: string;   // Descricao do Produto 1
+  // Meta Ads
+  metaAdId?: string;
+  metaAdName?: string;
+  metaAdsetId?: string;
+  metaAdsetName?: string;
+  metaCampaignId?: string;
+  metaCampaignName?: string;
+  metaFormId?: string;
+  metaFormName?: string;
+  metaPageId?: string;
+  metaPageName?: string;
+  metaLeadgenId?: string;
+  metaPlatform?: string;
+  // UTM
+  utmUrl?: string;
+  utmMedium?: string;
+  utmSource?: string;
+  utmCampaign?: string;
+  utmTerm?: string;
+  utmContent?: string;
+  // Qualificacao (perguntas do form)
+  urgency?: string;
+  investmentIntent?: string;
+  jobTitle?: string;
+  monthlyBudget?: string;
+  contactPreference?: string;
+  mainChallenge?: string;
+  sector?: string;
+  classFrequency?: string;
+  professionalMoment?: string;
+  // Misc
+  discarded?: boolean;
+  discardReason?: string;
+  discardDesc?: string;
+  firstNote?: string;
+  firstTask?: string;
+  registeredAt?: string;  // Data de Cadastro original
+  externalId?: string;    // ID do Lead original
 }
+
 export interface Activity {
   id: string;
   type: "task" | "call" | "meeting" | "email";
@@ -97,6 +179,7 @@ interface StoreState {
   addStage: (pipelineId: string, name: string, probability: number) => void;
   renameStage: (pipelineId: string, stageId: string, name: string) => void;
   deleteStage: (pipelineId: string, stageId: string) => void;
+  reorderStages: (pipelineId: string, stageIds: string[]) => void;
 
   // deals
   addDeal: (d: Omit<Deal, "id" | "status" | "createdAt">) => void;
@@ -144,6 +227,7 @@ function seed() {
     pipelineId: SEED_PIPELINE_ID,
     status: "open" as const,
     createdAt: new Date().toISOString(),
+    stageEnteredAt: new Date().toISOString(),
   }));
   const companies: Company[] = Array.from(new Set(CONTACTS.map((c) => c.company))).map((name) => ({
     id: uid(),
@@ -152,15 +236,15 @@ function seed() {
   }));
   const automations: Automation[] = [
     { id: uid(), name: "Boas-vindas no WhatsApp", trigger: "Novo lead via WhatsApp", action: "Enviar mensagem + criar tarefa", active: true },
-    { id: uid(), name: "Mover para Qualificação", trigger: "Lead respondeu", action: "Mover negócio de etapa", active: true },
-    { id: uid(), name: "Alerta de negócio parado", trigger: "Sem atividade por 7 dias", action: "Notificar responsável", active: false },
-    { id: uid(), name: "Disparo N8N — lead quente", trigger: "Score ≥ 75", action: "Chamar webhook N8N", active: true },
+    { id: uid(), name: "Mover para Qualificacao", trigger: "Lead respondeu", action: "Mover negocio de etapa", active: true },
+    { id: uid(), name: "Alerta de negocio parado", trigger: "Sem atividade por 7 dias", action: "Notificar responsavel", active: false },
+    { id: uid(), name: "Disparo N8N - lead quente", trigger: "Score >= 75", action: "Chamar webhook N8N", active: true },
   ];
   const scoringRules: ScoringRule[] = [
     { id: uid(), label: "Abriu e-mail de proposta", points: 10 },
     { id: uid(), label: "Respondeu no WhatsApp", points: 15 },
-    { id: uid(), label: "Origem: Indicação", points: 20 },
-    { id: uid(), label: "Sem resposta há 14 dias", points: -10 },
+    { id: uid(), label: "Origem: Indicacao", points: 20 },
+    { id: uid(), label: "Sem resposta ha 14 dias", points: -10 },
   ];
   return { pipelines, deals, contacts: [...CONTACTS], activities: [...ACTIVITIES], companies, automations, scoringRules, connectedChannels: [] };
 }
@@ -168,9 +252,21 @@ function seed() {
 const uid = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 
+/** Normaliza string para comparacao de duplicatas (remove acento, lower, trim) */
+function normalizeKey(s: string) {
+  return s.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+/** Chave de deduplicacao: phone > email > nome normalizado */
+function dedupeKey(c: Omit<Contact, "id">): string {
+  if (c.phone?.trim()) return `ph:${c.phone.replace(/\D/g, "")}`;
+  if (c.email?.trim()) return `em:${normalizeKey(c.email)}`;
+  return `nm:${normalizeKey(c.name)}`;
+}
+
 export const useStore = create<StoreState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       ...seed(),
 
       addPipeline: (name) => {
@@ -219,10 +315,18 @@ export const useStore = create<StoreState>()(
           ),
           deals: s.deals.filter((d) => d.stageId !== stageId),
         })),
+      reorderStages: (pipelineId, stageIds) =>
+        set((s) => ({
+          pipelines: s.pipelines.map((p) => {
+            if (p.id !== pipelineId) return p;
+            const map = Object.fromEntries(p.stages.map((st) => [st.id, st]));
+            return { ...p, stages: stageIds.map((id) => map[id]).filter(Boolean) };
+          }),
+        })),
 
       addDeal: (d) =>
         set((s) => ({
-          deals: [...s.deals, { ...d, id: uid(), status: "open", createdAt: new Date().toISOString() }],
+          deals: [...s.deals, { ...d, id: uid(), status: "open", createdAt: new Date().toISOString(), stageEnteredAt: new Date().toISOString() }],
         })),
       moveDeal: (dealId, stageId) =>
         set((s) => ({
@@ -231,8 +335,8 @@ export const useStore = create<StoreState>()(
             const pipeline = s.pipelines.find((p) => p.id === d.pipelineId);
             const fromName = pipeline?.stages.find((st) => st.id === d.stageId)?.name ?? "—";
             const toName = pipeline?.stages.find((st) => st.id === stageId)?.name ?? "—";
-            const entry = { ts: new Date().toISOString(), text: `Movido de ${fromName} → ${toName}` };
-            return { ...d, stageId, history: [...(d.history ?? []), entry] };
+            const entry = { ts: new Date().toISOString(), text: `Movido de ${fromName} -> ${toName}` };
+            return { ...d, stageId, stageEnteredAt: new Date().toISOString(), history: [...(d.history ?? []), entry] };
           }),
         })),
       updateDeal: (dealId, patch) =>
@@ -241,7 +345,7 @@ export const useStore = create<StoreState>()(
         set((s) => ({
           deals: s.deals.map((d) =>
             d.id === dealId
-              ? { ...d, status: "won", history: [...(d.history ?? []), { ts: new Date().toISOString(), text: "Marcado como ganho 🎉" }] }
+              ? { ...d, status: "won", history: [...(d.history ?? []), { ts: new Date().toISOString(), text: "Marcado como ganho" }] }
               : d
           ),
         })),
@@ -249,18 +353,47 @@ export const useStore = create<StoreState>()(
         set((s) => ({
           deals: s.deals.map((d) =>
             d.id === dealId
-              ? { ...d, status: "lost", lostReason: reason, history: [...(d.history ?? []), { ts: new Date().toISOString(), text: `Marcado como perdido — ${reason}` }] }
+              ? { ...d, status: "lost", lostReason: reason, history: [...(d.history ?? []), { ts: new Date().toISOString(), text: `Marcado como perdido - ${reason}` }] }
               : d
           ),
         })),
       deleteDeal: (dealId) => set((s) => ({ deals: s.deals.filter((d) => d.id !== dealId) })),
 
-      addContact: (c) => set((s) => ({ contacts: [{ ...c, id: uid() }, ...s.contacts] })),
-      addContacts: (cs) =>
-        set((s) => ({ contacts: [...cs.map((c) => ({ ...c, id: uid() })), ...s.contacts] })),
+      // Contato: sem duplicatas; deleteContact remove deals vinculados
+      addContact: (c) => {
+        const key = dedupeKey(c);
+        set((s) => {
+          if (s.contacts.some((ex) => dedupeKey(ex) === key)) return s;
+          return { contacts: [{ ...c, id: uid() }, ...s.contacts] };
+        });
+      },
+      addContacts: (cs) => {
+        set((s) => {
+          const existingKeys = new Set(s.contacts.map(dedupeKey));
+          const seen = new Set<string>();
+          const newOnes: Contact[] = [];
+          for (const c of cs) {
+            const key = dedupeKey(c);
+            if (existingKeys.has(key) || seen.has(key)) continue;
+            seen.add(key);
+            newOnes.push({ ...c, id: uid() });
+          }
+          return { contacts: [...newOnes, ...s.contacts] };
+        });
+      },
       updateContact: (id, patch) =>
         set((s) => ({ contacts: s.contacts.map((c) => (c.id === id ? { ...c, ...patch } : c)) })),
-      deleteContact: (id) => set((s) => ({ contacts: s.contacts.filter((c) => c.id !== id) })),
+      deleteContact: (id) => {
+        const state = get();
+        const contact = state.contacts.find((c) => c.id === id);
+        set((s) => ({
+          contacts: s.contacts.filter((c) => c.id !== id),
+          // Remove deals vinculados por id ou por nome
+          deals: contact
+            ? s.deals.filter((d) => d.contactId !== id && d.contact !== contact.name)
+            : s.deals,
+        }));
+      },
       addActivity: (a) => set((s) => ({ activities: [{ ...a, id: uid(), done: false }, ...s.activities] })),
       toggleActivity: (id) =>
         set((s) => ({ activities: s.activities.map((a) => (a.id === id ? { ...a, done: !a.done } : a)) })),
@@ -294,14 +427,10 @@ export const useStore = create<StoreState>()(
     }),
     {
       name: "beely-store",
-      // v3 → apaga dados fictícios antigos, começa com conta Be Fluent limpa
-      version: 3,
+      version: 4,
       skipHydration: true,
       migrate: (_persisted: unknown, fromVersion) => {
-        // Qualquer versão anterior ao v3 recomeça do zero (conta limpa para produção)
-        if (fromVersion < 3) {
-          return seed() as unknown as StoreState;
-        }
+        if (fromVersion < 4) return seed() as unknown as StoreState;
         const base = seed();
         const prev = (_persisted ?? {}) as Partial<StoreState>;
         return { ...base, ...prev, connectedChannels: prev.connectedChannels ?? [] } as StoreState;
@@ -312,7 +441,6 @@ export const useStore = create<StoreState>()(
 
 export const DEFAULT_OWNER = DEMO_USER.name;
 
-/** True only after Zustand persist has finished rehydrating from localStorage. */
 export function useHydrated() {
   return useSyncExternalStore(
     (cb) => useStore.persist.onFinishHydration(cb),

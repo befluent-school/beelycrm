@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useStore, type Contact } from "@/lib/store";
 import { initials, cn } from "@/lib/utils";
-import { Phone, Mail, MessageCircle, Trash2, X } from "lucide-react";
+import { Phone, Mail, MessageCircle, Trash2, X, MapPin, Briefcase, BarChart2, Megaphone } from "lucide-react";
 
 export function ContactDrawer({ contactId, onClose }: { contactId: string | null; onClose: () => void }) {
   const contact = useStore((s) => s.contacts.find((c) => c.id === contactId)) ?? null;
@@ -19,36 +20,124 @@ export function ContactDrawer({ contactId, onClose }: { contactId: string | null
 
 function ContactDrawerInner({ contact, onClose }: { contact: Contact; onClose: () => void }) {
   const { deals, activities, updateContact, deleteContact } = useStore();
-  const [form, setForm] = useState({
-    name: contact.name, email: contact.email, phone: contact.phone, company: contact.company,
-    source: contact.source, owner: contact.owner, score: contact.score,
+  const [form, setForm] = useState<Omit<Contact, "id">>({
+    name:               contact.name,
+    email:              contact.email,
+    phone:              contact.phone,
+    company:            contact.company,
+    fantasyName:        contact.fantasyName ?? "",
+    source:             contact.source,
+    campaign:           contact.campaign ?? "",
+    funnel:             contact.funnel ?? "",
+    stage:              contact.stage ?? "",
+    status:             contact.status ?? "",
+    team:               contact.team ?? "",
+    owner:              contact.owner,
+    score:              contact.score,
+    tags:               contact.tags,
+    firstNote:          contact.firstNote ?? "",
+    cpfCnpj:            contact.cpfCnpj ?? "",
+    // Endereco
+    cep:                contact.cep ?? "",
+    country:            contact.country ?? "",
+    state:              contact.state ?? "",
+    city:               contact.city ?? "",
+    neighborhood:       contact.neighborhood ?? "",
+    street:             contact.street ?? "",
+    complement:         contact.complement ?? "",
+    number:             contact.number ?? "",
+    // Endereco empresa
+    companyCep:          contact.companyCep ?? "",
+    companyCountry:      contact.companyCountry ?? "",
+    companyState:        contact.companyState ?? "",
+    companyCity:         contact.companyCity ?? "",
+    companyNeighborhood: contact.companyNeighborhood ?? "",
+    companyStreet:       contact.companyStreet ?? "",
+    companyComplement:   contact.companyComplement ?? "",
+    companyNumber:       contact.companyNumber ?? "",
+    // Produto
+    product:            contact.product ?? "",
+    productValue:       contact.productValue,
+    productDesc:        contact.productDesc ?? "",
+    // Meta Ads
+    metaAdId:           contact.metaAdId ?? "",
+    metaAdName:         contact.metaAdName ?? "",
+    metaAdsetId:        contact.metaAdsetId ?? "",
+    metaAdsetName:      contact.metaAdsetName ?? "",
+    metaCampaignId:     contact.metaCampaignId ?? "",
+    metaCampaignName:   contact.metaCampaignName ?? "",
+    metaFormId:         contact.metaFormId ?? "",
+    metaFormName:       contact.metaFormName ?? "",
+    metaPageId:         contact.metaPageId ?? "",
+    metaPageName:       contact.metaPageName ?? "",
+    metaLeadgenId:      contact.metaLeadgenId ?? "",
+    metaPlatform:       contact.metaPlatform ?? "",
+    // UTM
+    utmUrl:             contact.utmUrl ?? "",
+    utmMedium:          contact.utmMedium ?? "",
+    utmSource:          contact.utmSource ?? "",
+    utmCampaign:        contact.utmCampaign ?? "",
+    utmTerm:            contact.utmTerm ?? "",
+    utmContent:         contact.utmContent ?? "",
+    // Qualificacao
+    urgency:            contact.urgency ?? "",
+    investmentIntent:   contact.investmentIntent ?? "",
+    jobTitle:           contact.jobTitle ?? "",
+    monthlyBudget:      contact.monthlyBudget ?? "",
+    contactPreference:  contact.contactPreference ?? "",
+    mainChallenge:      contact.mainChallenge ?? "",
+    sector:             contact.sector ?? "",
+    classFrequency:     contact.classFrequency ?? "",
+    professionalMoment: contact.professionalMoment ?? "",
+    // Misc
+    externalId:         contact.externalId ?? "",
+    registeredAt:       contact.registeredAt ?? "",
+    discarded:          contact.discarded ?? false,
+    discardReason:      contact.discardReason ?? "",
+    discardDesc:        contact.discardDesc ?? "",
   });
   const [tagInput, setTagInput] = useState("");
-  const [tags, setTags] = useState<string[]>(contact.tags);
+  const [tags, setTags]         = useState<string[]>(contact.tags);
 
-  const dealsForContact = deals.filter((d) => d.contact === contact.name);
+  const dealsForContact = deals.filter((d) => d.contact === contact.name || d.contactId === contact.id);
   const activitiesForContact = activities.filter((a) => a.contact === contact.name);
 
-  function addTag(t: string) {
-    const v = t.trim();
-    if (!v || tags.includes(v)) return;
-    setTags((arr) => [...arr, v]);
-    setTagInput("");
+  const f = (k: keyof typeof form) => (val: string) => setForm((prev) => ({ ...prev, [k]: val }));
+
+  function save() {
+    updateContact(contact.id, { ...form, score: Number(form.score), tags });
+    toast.success("Contato atualizado.");
+    onClose();
   }
-  function removeTag(t: string) {
-    setTags((arr) => arr.filter((x) => x !== t));
+
+  function handleDelete() {
+    if (confirm(`Excluir o contato "${contact.name}" e todos os negocios vinculados?`)) {
+      deleteContact(contact.id);
+      onClose();
+      toast("Contato e negocios excluidos.");
+    }
   }
 
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="p-0">
-        <SheetHeader>
+      <SheetContent className="w-full max-w-xl p-0">
+        {/* Header */}
+        <SheetHeader className="border-b border-border/70 p-5">
           <div className="flex items-center gap-3">
-            <span className="flex size-12 items-center justify-center rounded-full bg-accent text-sm font-semibold text-primary">{initials(contact.name)}</span>
-            <div className="min-w-0">
+            <span className="flex size-12 items-center justify-center rounded-full bg-accent text-sm font-semibold text-primary">
+              {initials(contact.name)}
+            </span>
+            <div className="min-w-0 flex-1">
               <SheetTitle className="truncate">{contact.name}</SheetTitle>
-              <p className="truncate text-xs text-muted-foreground">{contact.company || "—"}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {[contact.company, contact.city && `${contact.city}/${contact.state}`].filter(Boolean).join(" · ") || "—"}
+              </p>
             </div>
+            {contact.status && (
+              <Badge variant={contact.status.toLowerCase() === "quente" ? "success" : contact.status.toLowerCase() === "frio" ? "outline" : "warning"}>
+                {contact.status}
+              </Badge>
+            )}
           </div>
           <div className="mt-3 flex gap-2">
             {contact.phone && <Quick icon={Phone} label="Ligar" href={`tel:${contact.phone}`} />}
@@ -57,82 +146,224 @@ function ContactDrawerInner({ contact, onClose }: { contact: Contact; onClose: (
           </div>
         </SheetHeader>
 
-        <form
-          className="flex-1 space-y-3 overflow-y-auto p-5"
-          onSubmit={(e) => {
-            e.preventDefault();
-            updateContact(contact.id, { ...form, score: Number(form.score), tags });
-            toast.success("Contato atualizado.");
-            onClose();
-          }}
-        >
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5 col-span-2"><Label>Nome</Label><Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></div>
-            <div className="space-y-1.5"><Label>E-mail</Label><Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} /></div>
-            <div className="space-y-1.5"><Label>Telefone</Label><Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} /></div>
-            <div className="space-y-1.5"><Label>Empresa</Label><Input value={form.company} onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))} /></div>
-            <div className="space-y-1.5"><Label>Origem</Label><Input value={form.source} onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))} /></div>
-            <div className="space-y-1.5"><Label>Responsável</Label><Input value={form.owner} onChange={(e) => setForm((f) => ({ ...f, owner: e.target.value }))} /></div>
-            <div className="space-y-1.5">
-              <Label>Score (0–100)</Label>
-              <Input type="number" min="0" max="100" value={form.score} onChange={(e) => setForm((f) => ({ ...f, score: Number(e.target.value) }))} />
-            </div>
-          </div>
+        <div className="flex-1 overflow-y-auto">
+          <Tabs defaultValue="principal">
+            <TabsList className="w-full rounded-none border-b border-border/70 px-5">
+              <TabsTrigger value="principal" className="flex-1 gap-1.5"><Phone className="size-3.5" /> Principal</TabsTrigger>
+              <TabsTrigger value="local" className="flex-1 gap-1.5"><MapPin className="size-3.5" /> Local</TabsTrigger>
+              <TabsTrigger value="qualif" className="flex-1 gap-1.5"><Briefcase className="size-3.5" /> Qualif.</TabsTrigger>
+              <TabsTrigger value="marketing" className="flex-1 gap-1.5"><Megaphone className="size-3.5" /> Mktg</TabsTrigger>
+              <TabsTrigger value="negocios" className="flex-1 gap-1.5"><BarChart2 className="size-3.5" /> Neg.</TabsTrigger>
+            </TabsList>
 
-          <div className="space-y-1.5">
-            <Label>Tags</Label>
-            <div className="flex flex-wrap gap-1.5">
-              {tags.map((t) => (
-                <span key={t} className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-xs">
-                  {t}
-                  <button type="button" onClick={() => removeTag(t)}><X className="size-3" /></button>
-                </span>
-              ))}
-              <input
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(tagInput); } }}
-                placeholder="+ tag (Enter)"
-                className="h-7 rounded-full border border-dashed border-border bg-transparent px-2 text-xs outline-none focus-visible:border-primary/50"
-              />
-            </div>
-          </div>
-
-          {dealsForContact.length > 0 && (
-            <div>
-              <Label className="mb-2 block">Negócios vinculados</Label>
-              <div className="space-y-1">
-                {dealsForContact.map((d) => (
-                  <div key={d.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm">
-                    <span className="truncate">{d.title}</span>
-                    <Badge variant={d.status === "won" ? "success" : d.status === "lost" ? "destructive" : "warning"}>{d.status}</Badge>
-                  </div>
-                ))}
+            {/* ABA: Principal */}
+            <TabsContent value="principal" className="space-y-3 p-5">
+              <div className="grid grid-cols-2 gap-3">
+                <F2 label="Nome" value={form.name} onChange={f("name")} />
+                <F2 label="E-mail" value={form.email} onChange={f("email")} />
+                <F2 label="Telefone / Celular" value={form.phone} onChange={f("phone")} />
+                <F2 label="CPF / CNPJ" value={form.cpfCnpj ?? ""} onChange={f("cpfCnpj")} />
+                <F2 label="Razao Social" value={form.company} onChange={f("company")} />
+                <F2 label="Nome Fantasia" value={form.fantasyName ?? ""} onChange={f("fantasyName")} />
+                <F2 label="Origem" value={form.source} onChange={f("source")} />
+                <F2 label="Campanha" value={form.campaign ?? ""} onChange={f("campaign")} />
+                <F2 label="Responsavel" value={form.owner} onChange={f("owner")} />
+                <F2 label="Equipe" value={form.team ?? ""} onChange={f("team")} />
+                <F2 label="Funil" value={form.funnel ?? ""} onChange={f("funnel")} />
+                <F2 label="Etapa" value={form.stage ?? ""} onChange={f("stage")} />
+                <div className="col-span-2">
+                  <Label className="mb-1.5 block text-xs">Status</Label>
+                  <select
+                    value={form.status ?? ""}
+                    onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
+                    className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none"
+                  >
+                    <option value="">Sem status</option>
+                    <option value="Quente">Quente</option>
+                    <option value="Morno">Morno</option>
+                    <option value="Frio">Frio</option>
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <Label className="mb-1.5 block text-xs">Score (0-100)</Label>
+                  <Input type="number" min="0" max="100" value={form.score} onChange={(e) => setForm((p) => ({ ...p, score: Number(e.target.value) }))} />
+                </div>
               </div>
-            </div>
-          )}
 
-          {activitiesForContact.length > 0 && (
-            <div>
-              <Label className="mb-2 block">Histórico de atividades</Label>
-              <ul className="space-y-1 text-sm">
-                {activitiesForContact.slice(0, 6).map((a) => (
-                  <li key={a.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
-                    <span className={cn(a.done && "text-muted-foreground line-through")}>{a.title}</span>
-                    <span className="text-xs text-muted-foreground">{a.due}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Tags</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {tags.map((t) => (
+                    <span key={t} className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-xs">
+                      {t}
+                      <button type="button" onClick={() => setTags((a) => a.filter((x) => x !== t))}><X className="size-3" /></button>
+                    </span>
+                  ))}
+                  <input
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); const v = tagInput.trim(); if (v && !tags.includes(v)) setTags((a) => [...a, v]); setTagInput(""); } }}
+                    placeholder="+ tag (Enter)"
+                    className="h-7 rounded-full border border-dashed border-border bg-transparent px-2 text-xs outline-none focus-visible:border-primary/50"
+                  />
+                </div>
+              </div>
 
-          <Button type="submit" className="w-full">Salvar alterações</Button>
-          <Button type="button" variant="ghost" className="w-full text-destructive" onClick={() => { if (confirm(`Excluir o contato "${contact.name}"?`)) { deleteContact(contact.id); onClose(); toast("Contato excluído."); } }}>
-            <Trash2 className="size-4" /> Excluir contato
-          </Button>
-        </form>
+              {/* Produto */}
+              {(form.product || form.productValue) && (
+                <div className="rounded-lg border border-border bg-white/[0.02] p-3 space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Produto</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <F2 label="Nome" value={form.product ?? ""} onChange={f("product")} />
+                    <div>
+                      <Label className="mb-1 block text-xs">Valor (R$)</Label>
+                      <Input type="number" value={form.productValue ?? ""} onChange={(e) => setForm((p) => ({ ...p, productValue: Number(e.target.value) || undefined }))} />
+                    </div>
+                    <div className="col-span-2"><F2 label="Descricao" value={form.productDesc ?? ""} onChange={f("productDesc")} /></div>
+                  </div>
+                </div>
+              )}
+
+              {form.firstNote && (
+                <div className="rounded-lg border border-border bg-white/[0.02] p-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Primeira Anotacao</p>
+                  <p className="text-sm">{form.firstNote}</p>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <Button onClick={save} className="flex-1">Salvar</Button>
+                <Button type="button" variant="ghost" className="text-destructive" onClick={handleDelete}>
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+            </TabsContent>
+
+            {/* ABA: Local */}
+            <TabsContent value="local" className="space-y-4 p-5">
+              <Section title="Endereco Pessoal">
+                <div className="grid grid-cols-2 gap-2">
+                  <F2 label="CEP" value={form.cep ?? ""} onChange={f("cep")} />
+                  <F2 label="Pais" value={form.country ?? ""} onChange={f("country")} />
+                  <F2 label="Estado" value={form.state ?? ""} onChange={f("state")} />
+                  <F2 label="Cidade" value={form.city ?? ""} onChange={f("city")} />
+                  <F2 label="Bairro" value={form.neighborhood ?? ""} onChange={f("neighborhood")} />
+                  <F2 label="Logradouro" value={form.street ?? ""} onChange={f("street")} />
+                  <F2 label="Numero" value={form.number ?? ""} onChange={f("number")} />
+                  <F2 label="Complemento" value={form.complement ?? ""} onChange={f("complement")} />
+                </div>
+              </Section>
+              <Section title="Endereco Empresa">
+                <div className="grid grid-cols-2 gap-2">
+                  <F2 label="CEP" value={form.companyCep ?? ""} onChange={f("companyCep")} />
+                  <F2 label="Estado" value={form.companyState ?? ""} onChange={f("companyState")} />
+                  <F2 label="Cidade" value={form.companyCity ?? ""} onChange={f("companyCity")} />
+                  <F2 label="Bairro" value={form.companyNeighborhood ?? ""} onChange={f("companyNeighborhood")} />
+                  <F2 label="Logradouro" value={form.companyStreet ?? ""} onChange={f("companyStreet")} />
+                  <F2 label="Numero" value={form.companyNumber ?? ""} onChange={f("companyNumber")} />
+                  <div className="col-span-2"><F2 label="Complemento" value={form.companyComplement ?? ""} onChange={f("companyComplement")} /></div>
+                </div>
+              </Section>
+              <Button onClick={save} className="w-full">Salvar</Button>
+            </TabsContent>
+
+            {/* ABA: Qualificacao */}
+            <TabsContent value="qualif" className="space-y-3 p-5">
+              <div className="grid grid-cols-1 gap-3">
+                <F2 label="Cargo" value={form.jobTitle ?? ""} onChange={f("jobTitle")} />
+                <F2 label="Principal Urgencia" value={form.urgency ?? ""} onChange={f("urgency")} />
+                <F2 label="Investimento Pretendido" value={form.investmentIntent ?? ""} onChange={f("investmentIntent")} />
+                <F2 label="Opcao de Investimento Mensal" value={form.monthlyBudget ?? ""} onChange={f("monthlyBudget")} />
+                <F2 label="Preferencia de Contato" value={form.contactPreference ?? ""} onChange={f("contactPreference")} />
+                <F2 label="Maior Desafio com Ingles" value={form.mainChallenge ?? ""} onChange={f("mainChallenge")} />
+                <F2 label="Setor Corporativo" value={form.sector ?? ""} onChange={f("sector")} />
+                <F2 label="Frequencia de Aulas" value={form.classFrequency ?? ""} onChange={f("classFrequency")} />
+                <F2 label="Momento Profissional" value={form.professionalMoment ?? ""} onChange={f("professionalMoment")} />
+              </div>
+              <Button onClick={save} className="w-full">Salvar</Button>
+            </TabsContent>
+
+            {/* ABA: Marketing */}
+            <TabsContent value="marketing" className="space-y-4 p-5">
+              <Section title="Meta Ads">
+                <div className="grid grid-cols-2 gap-2">
+                  <F2 label="Ad Name" value={form.metaAdName ?? ""} onChange={f("metaAdName")} />
+                  <F2 label="Adset Name" value={form.metaAdsetName ?? ""} onChange={f("metaAdsetName")} />
+                  <F2 label="Campaign Name" value={form.metaCampaignName ?? ""} onChange={f("metaCampaignName")} />
+                  <F2 label="Form Name" value={form.metaFormName ?? ""} onChange={f("metaFormName")} />
+                  <F2 label="Page Name" value={form.metaPageName ?? ""} onChange={f("metaPageName")} />
+                  <F2 label="Platform" value={form.metaPlatform ?? ""} onChange={f("metaPlatform")} />
+                </div>
+              </Section>
+              <Section title="UTM">
+                <div className="grid grid-cols-2 gap-2">
+                  <F2 label="Source" value={form.utmSource ?? ""} onChange={f("utmSource")} />
+                  <F2 label="Medium" value={form.utmMedium ?? ""} onChange={f("utmMedium")} />
+                  <F2 label="Campaign" value={form.utmCampaign ?? ""} onChange={f("utmCampaign")} />
+                  <F2 label="Term" value={form.utmTerm ?? ""} onChange={f("utmTerm")} />
+                  <F2 label="Content" value={form.utmContent ?? ""} onChange={f("utmContent")} />
+                  <div className="col-span-2"><F2 label="UTM URL" value={form.utmUrl ?? ""} onChange={f("utmUrl")} /></div>
+                </div>
+              </Section>
+              <Button onClick={save} className="w-full">Salvar</Button>
+            </TabsContent>
+
+            {/* ABA: Negocios */}
+            <TabsContent value="negocios" className="space-y-4 p-5">
+              {dealsForContact.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhum negocio vinculado.</p>
+              ) : (
+                <div className="space-y-2">
+                  {dealsForContact.map((d) => (
+                    <div key={d.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{d.title}</p>
+                        <p className="text-xs text-muted-foreground">{d.notes?.slice(0, 60)}</p>
+                      </div>
+                      <Badge variant={d.status === "won" ? "success" : d.status === "lost" ? "destructive" : "warning"}>
+                        {d.status === "won" ? "Ganho" : d.status === "lost" ? "Perdido" : "Aberto"}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {activitiesForContact.length > 0 && (
+                <>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Atividades</p>
+                  <ul className="space-y-1">
+                    {activitiesForContact.slice(0, 6).map((a) => (
+                      <li key={a.id} className={cn("flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm", a.done && "opacity-60")}>
+                        <span className={cn(a.done && "line-through")}>{a.title}</span>
+                        <span className="text-xs text-muted-foreground">{a.due}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </TabsContent>
+          </Tabs>
+        </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+/* ── Helpers de UI ────────────────────────────────────────────── */
+function F2({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <Input value={value} onChange={(e) => onChange(e.target.value)} className="h-8 text-sm" />
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
+      {children}
+    </div>
   );
 }
 
