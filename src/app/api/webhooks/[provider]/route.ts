@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
+import { pushMessage } from "@/lib/message-store";
 
 type Ctx = { params: Promise<{ provider: string }> };
 
@@ -26,12 +27,11 @@ export async function GET(request: Request, ctx: Ctx) {
   const token     = searchParams.get("hub.verify_token");
   const challenge = searchParams.get("hub.challenge");
 
-  // O verify_token configurado nas variáveis de ambiente ou fallback de dev
   const envToken =
-    provider === "whatsapp"  ? (process.env.WHATSAPP_VERIFY_TOKEN ?? "beely-verify") :
-    provider === "instagram" ? (process.env.INSTAGRAM_VERIFY_TOKEN ?? "beely-verify") :
-    provider === "messenger" ? (process.env.MESSENGER_VERIFY_TOKEN ?? "beely-verify") :
-    "beely-verify";
+    provider === "whatsapp"  ? (process.env.WHATSAPP_VERIFY_TOKEN ?? "beely2024") :
+    provider === "instagram" ? (process.env.INSTAGRAM_VERIFY_TOKEN ?? "beely2024") :
+    provider === "messenger" ? (process.env.MESSENGER_VERIFY_TOKEN ?? "beely2024") :
+    "beely2024";
 
   if (mode === "subscribe" && token === envToken) {
     console.log(`[webhook:${provider}] verificação OK`);
@@ -47,14 +47,12 @@ export async function POST(request: Request, ctx: Ctx) {
   const { provider } = await ctx.params;
   const rawBody = await request.text();
 
-  /* Verificação de assinatura para Meta (WhatsApp, Instagram, Messenger) */
-  if (["whatsapp", "instagram", "messenger"].includes(provider)) {
+  /* Verificação de assinatura para Meta Cloud API */
+  if (["instagram", "messenger"].includes(provider)) {
     const appSecret =
-      provider === "whatsapp"  ? process.env.WHATSAPP_APP_SECRET :
       provider === "instagram" ? process.env.INSTAGRAM_APP_SECRET :
       process.env.MESSENGER_APP_SECRET;
 
-    // Em produção, rejeite se o App Secret não estiver configurado
     if (appSecret && process.env.NODE_ENV === "production") {
       const signature = request.headers.get("x-hub-signature-256");
       if (!verifyMetaSignature(rawBody, signature, appSecret)) {
@@ -67,20 +65,42 @@ export async function POST(request: Request, ctx: Ctx) {
   let payload: unknown;
   try { payload = JSON.parse(rawBody); } catch { payload = {}; }
 
-  /* Roteamento por provider */
   try {
-    if (provider === "whatsapp")  await handleWhatsApp(payload);
-    if (provider === "instagram") await handleInstagram(payload);
-    if (provider === "messenger") await handleMessenger(payload);
+    if (provider === "whatsapp")  handleWhatsApp(payload);
+    if (provider === "instagram") handleInstagram(payload);
+    if (provider === "messenger") handleMessenger(payload);
   } catch (err) {
     console.error(`[webhook:${provider}] erro no handler`, err);
   }
 
-  // Meta exige resposta 200 rápida
   return NextResponse.json({ received: true, provider }, { status: 200 });
 }
 
-/* ── Handlers por canal ─────────────────────────────────────── */
+/* ── Z-API payload types ─────────────────────────────────────── */
+
+interface ZApiMessage {
+  phone?: string;
+  fromMe?: boolean;
+  momment?: number;         // timestamp em ms (Z-API v2)
+  timestamp?: number;       // fallback
+  text?: { message?: string };
+  audio?: { audioUrl?: string };
+  image?: { caption?: string };
+  document?: { fileName?: string };
+  senderName?: string;
+  senderPhoto?: string;
+  instanceId?: string;
+  messageId?: string;
+  type?: string;
+  // Z-API também pode enviar dentro de "value" (formato legado)
+  value?: {
+    phone?: string;
+    fromMe?: boolean;
+    text?: { message?: string };
+    senderName?: string;
+    momment?: number;
+  };
+}
 
 interface MetaTextMessage {
   from: string;
@@ -90,56 +110,150 @@ interface MetaTextMessage {
   type: string;
 }
 
-async function handleWhatsApp(payload: unknown) {
-  const p = payload as {
+/* ── WhatsApp — suporta Z-API e Meta Cloud API ──────────────── */
+
+function handleWhatsApp(payload: unknown) {
+  const p = payload as ZApiMessage & {
     object?: string;
     entry?: { changes?: { value?: { messages?: MetaTextMessage[]; contacts?: { profile?: { name?: string } }[] } }[] }[];
   };
-  if (p.object !== "whatsapp_business_account") return;
 
-  for (const entry of p.entry ?? []) {
-    for (const change of entry.changes ?? []) {
-      const value    = change.value ?? {};
-      const messages = value.messages ?? [];
-      for (const msg of messages) {
-        const from  = msg.from;
-        const text  = msg.text?.body ?? "";
-        const name  = value.contacts?.[0]?.profile?.name ?? from;
-        console.log(`[WhatsApp] de ${name} (${from}): ${text}`);
-        // TODO em produção: persistir no banco, notificar via WebSocket, criar lead se não existir
+  /* Z-API: mensagem recebida diretamente no root do payload */
+  if (p.phone && !p.object) {
+    // Ignora mensagens enviadas pelo próprio número
+    if (p.fromMe) return;
+
+    const phone = p.phone ?? "desconhecido";
+    const name  = p.senderName ?? phone;
+    const ts    = p.momment ?? p.timestamp ?? Date.now();
+
+    // Extrai texto de qualquer tipo de mensagem
+    const text =
+      p.text?.message ||
+      (p.audio ? "[Áudio]" : undefined) ||
+      (p.image ? (p.image.caption ?? "[Imagem]") : undefined) ||
+      (p.document ? `[Documento: ${p.document.fileName ?? "arquivo"}]` : undefined) ||
+      "(mensagem sem texto)";
+
+    console.log(`[WhatsApp/Z-API] de ${name} (${phone}): ${text}`);
+
+    pushMessage({
+      channel:   "whatsapp",
+      from:      phone,
+      fromName:  name,
+      text,
+      timestamp: typeof ts === "number" && ts > 1e12 ? ts : ts * 1000,
+      raw:       payload,
+    });
+    return;
+  }
+
+  /* Z-API v2 com envelope "value" */
+  if (p.value?.phone) {
+    if (p.value.fromMe) return;
+    const phone = p.value.phone;
+    const name  = p.value.senderName ?? phone;
+    const text  = p.value.text?.message ?? "(mensagem)";
+    const ts    = p.value.momment ?? Date.now();
+
+    pushMessage({
+      channel:   "whatsapp",
+      from:      phone,
+      fromName:  name,
+      text,
+      timestamp: typeof ts === "number" && ts > 1e12 ? ts : ts * 1000,
+      raw:       payload,
+    });
+    return;
+  }
+
+  /* Meta Cloud API (WhatsApp Business API oficial) */
+  if (p.object === "whatsapp_business_account") {
+    for (const entry of p.entry ?? []) {
+      for (const change of entry.changes ?? []) {
+        const value    = change.value ?? {};
+        const messages = value.messages ?? [];
+        for (const msg of messages) {
+          const text = msg.text?.body ?? "(mensagem)";
+          const name = value.contacts?.[0]?.profile?.name ?? msg.from;
+          pushMessage({
+            channel:   "whatsapp",
+            from:      msg.from,
+            fromName:  name,
+            text,
+            timestamp: Number(msg.timestamp) * 1000,
+            raw:       payload,
+          });
+        }
       }
     }
   }
 }
 
-async function handleInstagram(payload: unknown) {
+/* ── Instagram Graph API ────────────────────────────────────── */
+
+function handleInstagram(payload: unknown) {
   const p = payload as {
     object?: string;
-    entry?: { messaging?: { sender?: { id?: string }; message?: { text?: string } }[] }[];
+    entry?: {
+      id?: string;
+      messaging?: {
+        sender?: { id?: string };
+        recipient?: { id?: string };
+        timestamp?: number;
+        message?: { mid?: string; text?: string };
+      }[];
+    }[];
   };
   if (p.object !== "instagram") return;
 
   for (const entry of p.entry ?? []) {
     for (const ev of entry.messaging ?? []) {
       const from = ev.sender?.id ?? "desconhecido";
-      const text = ev.message?.text ?? "";
-      console.log(`[Instagram DM] de ${from}: ${text}`);
+      const text = ev.message?.text ?? "(mensagem)";
+      const ts   = ev.timestamp ?? Date.now();
+      pushMessage({
+        channel:   "instagram",
+        from,
+        fromName:  `IG:${from}`,
+        text,
+        timestamp: ts > 1e12 ? ts : ts * 1000,
+        raw:       payload,
+      });
     }
   }
 }
 
-async function handleMessenger(payload: unknown) {
+/* ── Messenger (Facebook) ───────────────────────────────────── */
+
+function handleMessenger(payload: unknown) {
   const p = payload as {
     object?: string;
-    entry?: { messaging?: { sender?: { id?: string }; message?: { text?: string } }[] }[];
+    entry?: {
+      id?: string;
+      messaging?: {
+        sender?: { id?: string };
+        recipient?: { id?: string };
+        timestamp?: number;
+        message?: { mid?: string; text?: string };
+      }[];
+    }[];
   };
   if (p.object !== "page") return;
 
   for (const entry of p.entry ?? []) {
     for (const ev of entry.messaging ?? []) {
       const from = ev.sender?.id ?? "desconhecido";
-      const text = ev.message?.text ?? "";
-      console.log(`[Messenger] de ${from}: ${text}`);
+      const text = ev.message?.text ?? "(mensagem)";
+      const ts   = ev.timestamp ?? Date.now();
+      pushMessage({
+        channel:   "messenger",
+        from,
+        fromName:  `FB:${from}`,
+        text,
+        timestamp: ts > 1e12 ? ts : ts * 1000,
+        raw:       payload,
+      });
     }
   }
 }

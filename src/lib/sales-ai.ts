@@ -1,10 +1,15 @@
 /**
- * Sales AI Engine — análise profunda de conversas + sugestões estratégicas.
+ * Sales AI Engine — Closer Sênior para escola de idiomas (Be Fluent).
  *
- * Filosofia inspirada em:
- * - Jon Benson (VSL / copy de resposta direta): mensagem curta, benefício imediato, CTA claro
- * - COO mindset: visão de funil, conversão por etapa, custo de oportunidade
- * - Copy Master: gatilhos mentais, quebra de objeção, ancoragem de valor
+ * Frameworks integrados:
+ * - Chris Voss (Never Split the Difference): labeling, tactical empathy, mirroring
+ * - Alex Hormozi ($100M Offers): value stack, irresistible offer, risk reversal
+ * - SPIN Selling (Neil Rackham): Situation → Problem → Implication → Need-payoff
+ * - SNAP Selling (Jill Konrath): Simple, iNvaluable, Aligned, Priority
+ * - Cialdini: reciprocity, scarcity, social proof, authority, liking, commitment
+ * - Jon Benson: VSL structure, benefit-first, immediate CTA
+ * - Chris Orlob: deal momentum, multi-threading, champion building
+ * - Jordan Belfort: straight line persuasion, certainty transfer
  */
 
 export type InsightType = "interest" | "suggestion" | "objection" | "warning" | "strategy" | "closing";
@@ -13,9 +18,10 @@ export interface SalesInsight {
   type: InsightType;
   title: string;
   body: string;
-  cta?: string;          // texto sugerido para enviar (botão "Usar")
+  cta?: string;
   priority: "high" | "medium" | "low";
-  tag?: string;          // ex: "Gatilho: Urgência", "Técnica: SPIN"
+  tag?: string;
+  framework?: string;
 }
 
 export interface ConversationContext {
@@ -35,13 +41,54 @@ export interface ConversationContext {
 
 /* ── Detectores de sinal ──────────────────────────────────── */
 
-const BUYING_SIGNALS   = ["fechado", "vamos", "fechar", "quero", "contratar", "assinar", "renovar", "como faço", "qual o próximo passo", "quando começa", "manda o contrato", "aceito", "combinado", "pode mandar"];
-const PRICE_OBJECTIONS = ["caro", "desconto", "preço", "valor", "custo", "orçamento", "cabe no", "parcela", "forma de pagamento", "investimento alto"];
-const TIME_OBJECTIONS  = ["prazo", "quanto tempo", "quando", "demora", "urgente", "preciso logo", "esta semana", "hoje"];
-const COMPETITOR_SIGS  = ["concorrente", "outro sistema", "estou vendo", "comparando", "já uso", "estamos avaliando"];
-const COLD_SIGNALS     = ["não sei", "talvez", "vou pensar", "deixa eu ver", "depois", "mais tarde", "vou analisar", "não tenho certeza"];
-const PAIN_SIGNALS     = ["problema", "dificuldade", "não consigo", "perco", "perde", "desperdiça", "demora muito", "manual", "trabalhoso", "confuso"];
-const INTEREST_SIGNALS = ["interessante", "gostei", "parece bom", "me conta mais", "como funciona", "tem mais", "fala mais", "que mais"];
+const BUYING_SIGNALS = [
+  "fechado", "vamos", "fechar", "quero", "contratar", "assinar", "renovar",
+  "como faço", "qual o próximo passo", "quando começa", "manda o contrato",
+  "aceito", "combinado", "pode mandar", "bora", "me manda", "vou fechar",
+  "quero começar", "pode confirmar", "quando podemos", "vamos nessa",
+];
+const PRICE_OBJECTIONS = [
+  "caro", "desconto", "preço", "valor", "custo", "orçamento", "cabe no",
+  "parcela", "forma de pagamento", "investimento alto", "muito", "salgado",
+  "não tenho budget", "não tenho grana", "tá pesado", "é muito",
+];
+const TIME_OBJECTIONS = [
+  "prazo", "quanto tempo", "demora", "urgente", "preciso logo",
+  "esta semana", "hoje", "quando começa", "tempo",
+];
+const POSTPONE_SIGNALS = [
+  "depois", "mais tarde", "próximo mês", "ano que vem", "quando der",
+  "não é agora", "no futuro", "ainda não", "em breve", "deixa pra depois",
+];
+const COMPETITOR_SIGS = [
+  "outro sistema", "estou vendo", "comparando", "já uso", "estamos avaliando",
+  "concorrente", "outra escola", "outro curso", "duolingo", "outro app",
+  "preply", "italki", "wizard", "cultura", "fisk", "ccaa",
+];
+const COLD_SIGNALS = [
+  "não sei", "talvez", "vou pensar", "deixa eu ver", "vou analisar",
+  "não tenho certeza", "preciso perguntar", "vou ver com",
+];
+const PAIN_SIGNALS = [
+  "problema", "dificuldade", "não consigo", "perco", "perde", "desperdiça",
+  "demora muito", "manual", "trabalhoso", "confuso", "trancado", "vergonha",
+  "medo", "não falo", "travo", "trave", "erro", "errar", "sotaque",
+  "inglês fraco", "básico", "intermediário preso", "não evoluo",
+];
+const INTEREST_SIGNALS = [
+  "interessante", "gostei", "parece bom", "me conta mais", "como funciona",
+  "tem mais", "fala mais", "que mais", "adoro", "quero saber", "me interessa",
+  "curioso", "qual é a metodologia", "como é a aula",
+];
+const URGENCY_SIGNALS = [
+  "viagem", "entrevista", "promoção", "promoção de emprego", "intercâmbio",
+  "reunião", "apresentação", "prazo", "mês que vem", "semana que vem",
+  "urgente", "preciso muito", "job", "trabalho", "emprego", "oportunidade",
+];
+const AUTHORITY_QUESTION = [
+  "meu marido", "minha esposa", "meu chefe", "empresa paga", "meu pai",
+  "tenho que perguntar", "vou consultar", "não decido sozinho",
+];
 
 function detect(text: string, signals: string[]): boolean {
   const t = text.toLowerCase();
@@ -52,82 +99,119 @@ function detectAll(texts: string[], signals: string[]): boolean {
   return texts.some((t) => detect(t, signals));
 }
 
-/* ── Motor principal de análise ───────────────────────────── */
+function detectFirst(texts: string[], signals: string[]): string | null {
+  for (const t of texts) {
+    const found = signals.find((s) => t.toLowerCase().includes(s));
+    if (found) return found;
+  }
+  return null;
+}
+
+/* ── Análise de sentimento simples ────────────────────────── */
+
+function sentimentScore(texts: string[]): number {
+  const positive = ["ótimo", "excelente", "perfeito", "adorei", "incrível", "top", "bom", "gosto", "legal", "show", "boa"];
+  const negative = ["ruim", "péssimo", "não gostei", "horrível", "problema", "frustr", "chateado", "decepcionado"];
+  let score = 0;
+  for (const t of texts) {
+    const tl = t.toLowerCase();
+    for (const p of positive) if (tl.includes(p)) score += 1;
+    for (const n of negative) if (tl.includes(n)) score -= 1;
+  }
+  return score;
+}
+
+/* ── Motor principal ──────────────────────────────────────── */
 
 export function analyzeConversation(ctx: ConversationContext): SalesInsight[] {
   const insights: SalesInsight[] = [];
-  const { contactName, contactScore, dealStage, dealValue, inMessages, outMessages, lastInText, lastOutText, channel, contactTags } = ctx;
-  const firstName = contactName.split(" ")[0];
-  const allInTexts = inMessages.map((m) => m.text);
-  const noIn = inMessages.length === 0;
-  const noOut = outMessages.length === 0;
+  const {
+    contactName, contactScore, dealStage, dealValue,
+    inMessages, outMessages, lastInText, lastOutText,
+    channel, contactTags,
+  } = ctx;
+
+  const firstName    = contactName.split(" ")[0];
+  const allInTexts   = inMessages.map((m) => m.text);
+  const allOutTexts  = outMessages.map((m) => m.text);
+  const noIn         = inMessages.length === 0;
+  const noOut        = outMessages.length === 0;
+  const msgCount     = inMessages.length + outMessages.length;
+  const sentiment    = sentimentScore(allInTexts);
+  const chName       = channel === "whatsapp" ? "WhatsApp" : channel === "instagram" ? "Instagram" : "Messenger";
 
   const isBuying     = detect(lastInText, BUYING_SIGNALS);
   const isPriceObj   = detect(lastInText, PRICE_OBJECTIONS) || detectAll(allInTexts.slice(-3), PRICE_OBJECTIONS);
   const isTimeObj    = detect(lastInText, TIME_OBJECTIONS);
+  const isPostpone   = detect(lastInText, POSTPONE_SIGNALS);
   const isCompetitor = detect(lastInText, COMPETITOR_SIGS) || detectAll(allInTexts, COMPETITOR_SIGS);
   const isCold       = detect(lastInText, COLD_SIGNALS);
   const hasPain      = detectAll(allInTexts, PAIN_SIGNALS);
   const isInterested = detect(lastInText, INTEREST_SIGNALS);
+  const hasUrgency   = detectAll(allInTexts, URGENCY_SIGNALS);
+  const isAuthority  = detect(lastInText, AUTHORITY_QUESTION) || detectAll(allInTexts.slice(-2), AUTHORITY_QUESTION);
   const isHot        = contactScore >= 70 || contactTags.includes("quente");
-  const isHighValue  = (dealValue ?? 0) >= 10000;
+  const isHighValue  = (dealValue ?? 0) >= 5000;
+  const urgencyKw    = detectFirst(allInTexts, URGENCY_SIGNALS);
+  const painKw       = detectFirst(allInTexts, PAIN_SIGNALS);
 
-  /* ── 1. Análise de momento do lead ─────────────────────── */
-  if (noIn) {
+  /* ═══════════════════════════════════════════════════════
+   * BLOCO 1 — VELOCIDADE DE RESPOSTA (prioridade máxima)
+   * ═════════════════════════════════════════════════════ */
+
+  if (noOut && inMessages.length > 0) {
     insights.push({
       type: "warning",
       priority: "high",
-      title: "Lead sem resposta",
-      body: `${contactName} ainda não respondeu. Leads sem follow-up nas primeiras 5 min têm 80% menos chance de converter. Envie uma mensagem de reativação agora.`,
-      tag: "Regra: Follow-up urgente",
-      cta: `Oi ${firstName}! Vi que você entrou em contato com a gente. Tenho 2 minutos agora — posso te ligar ou prefere que eu te mande mais detalhes aqui?`,
-    });
-  } else if (isBuying) {
-    insights.push({
-      type: "closing",
-      priority: "high",
-      title: "🔥 Sinal de fechamento detectado!",
-      body: `${contactName} demonstrou intenção de compra. Este é o momento de avançar para o fechamento sem hesitar. Não dê mais tempo para dúvidas surgirem — proponha o próximo passo concreto agora.`,
-      tag: "Técnica: Assumir o sim",
-      cta: `Perfeito ${firstName}! Vou te mandar o contrato agora mesmo. Qual o melhor e-mail para enviar? Assim já deixo tudo certo pra você começar ainda essa semana.`,
-    });
-  } else if (isCold) {
-    insights.push({
-      type: "warning",
-      priority: "high",
-      title: "Lead em fase de hesitação",
-      body: `${contactName} está em modo de procrastinação — "vou pensar" geralmente significa que falta clareza no valor ou medo da decisão. Reduza o risco percebido e crie uma micro-ação.`,
-      tag: "Técnica: Redução de risco",
-      cta: `Entendo ${firstName}! Sem pressão. Só queria saber: qual é a sua principal dúvida? Posso resolver em 2 minutos agora e você decide com mais segurança.`,
-    });
-  } else if (isInterested) {
-    insights.push({
-      type: "interest",
-      priority: "medium",
-      title: "Lead aquecendo — aproveite o momentum",
-      body: `${contactName} demonstrou curiosidade ativa. Este é o momento de aprofundar a dor e conectar ao benefício concreto. Faça uma pergunta SPIN (Situação → Problema → Implicação → Necessidade).`,
-      tag: "Técnica: SPIN Selling",
-      cta: `Que ótimo ${firstName}! Me conta: qual é o maior desafio que você tem hoje na parte de [área de interesse]? Quero entender melhor pra te mostrar exatamente o que vai resolver.`,
-    });
-  } else if (inMessages.length > 0) {
-    insights.push({
-      type: "interest",
-      priority: "low",
-      title: `Engajamento ${contactScore >= 50 ? "positivo" : "baixo"} — score ${contactScore} pts`,
-      body: `${contactName} tem ${inMessages.length} mensagem${inMessages.length > 1 ? "s" : ""} nesta conversa. ${contactScore >= 50 ? "Bom sinal — mantenha o ritmo e avance para qualificação." : "Score baixo — qualifique antes de apresentar proposta."}`,
-      tag: contactScore >= 50 ? "Status: Qualificado" : "Status: Em qualificação",
+      title: `Sem resposta sua no ${chName}`,
+      body: "Você ainda não respondeu. Cada minuto de silêncio aumenta em 10x a probabilidade de o lead ir para um concorrente. A primeira resposta define o tom. Seja humano, rápido e curioso.",
+      tag: "Regra: Velocidade de resposta",
+      framework: "Chris Voss — Rapport imediato",
+      cta: `Oi ${firstName}! Recebi sua mensagem aqui. Vou te dar atenção completa — pode falar à vontade!`,
     });
   }
 
-  /* ── 2. Objeções ────────────────────────────────────────── */
+  if (noIn && !noOut) {
+    insights.push({
+      type: "warning",
+      priority: "high",
+      title: "Lead sem resposta — reative agora",
+      body: `${firstName} ainda não respondeu. Leads sem follow-up nas primeiras 5 min têm 80% menos chance de converter (MIT Lead Response Study). Use a técnica de "rotulagem" de Voss: nomeie o estado emocional possível do lead.`,
+      tag: "Regra: Follow-up urgente",
+      framework: "Chris Voss — Tactical Labeling",
+      cta: `Oi ${firstName}! Imagino que você deve estar bem ocupado hoje. Se quiser, posso te mandar um resumo rápido de como funciona aqui — fica mais fácil de ver quando der! 😊`,
+    });
+  }
+
+  /* ═══════════════════════════════════════════════════════
+   * BLOCO 2 — SINAL DE FECHAMENTO (ganhe agora)
+   * ═════════════════════════════════════════════════════ */
+
+  if (isBuying) {
+    insights.push({
+      type: "closing",
+      priority: "high",
+      title: "🔥 Sinal de fechamento — aja AGORA",
+      body: `${firstName} demonstrou intenção clara de compra. Não dê mais opções nem mais informações — isso só cria dúvida. Aplique o "Straight Line" de Belfort: conduza direto ao próximo passo concreto. Qualquer hesitação sua neste momento vai esfriar o lead.`,
+      tag: "Técnica: Assumir o sim",
+      framework: "Jordan Belfort — Straight Line Persuasion",
+      cta: `Perfeito ${firstName}! Fico muito feliz! Só preciso de dois segundos: qual o melhor e-mail pra eu enviar o contrato agora? Assim você já começa ainda essa semana. 🎯`,
+    });
+  }
+
+  /* ═══════════════════════════════════════════════════════
+   * BLOCO 3 — OBJEÇÕES (resolva com precisão cirúrgica)
+   * ═════════════════════════════════════════════════════ */
+
   if (isPriceObj) {
     insights.push({
       type: "objection",
       priority: "high",
-      title: "Objeção de preço — ancore no ROI",
-      body: `Nunca dê desconto como primeiro recurso — isso desvaloriza a oferta. Use a técnica de ancoragem: mostre o custo do problema atual vs. o investimento na solução. ${isHighValue ? "Oferta de alto valor — reforce exclusividade e resultado garantido." : ""}`,
+      title: "Objeção de preço — NUNCA dê desconto direto",
+      body: `"Caro" quase sempre significa "ainda não enxerguei o valor". Use a ancoragem de Hormozi: empilhe o valor antes de mencionar preço. Mostre o custo de NÃO resolver: quanto vale um ano de fluência no trabalho de ${firstName}? Compare com o custo do método. Só dê desconto como ÚLTIMA opção e exija contrapartida (pagamento à vista, indicação, plano anual).`,
       tag: "Técnica: Ancoragem de valor",
-      cta: `${firstName}, entendo! Mas me deixa te mostrar uma coisa: quanto você estima que perde por mês com esse problema hoje? Porque o retorno dos nossos clientes é em média 3x o investimento nos primeiros 60 dias.`,
+      framework: "Alex Hormozi — Value Stack",
+      cta: `${firstName}, entendo que você quer ter certeza que vale o investimento. Me deixa te mostrar: em 6 meses de aula você vai poder [resultado concreto: negociar em inglês / viajar com confiança / garantir a promoção]. Quanto você acha que isso vale pra sua carreira? Porque o investimento aqui é muito menos que isso.`,
     });
   }
 
@@ -135,10 +219,23 @@ export function analyzeConversation(ctx: ConversationContext): SalesInsight[] {
     insights.push({
       type: "objection",
       priority: "medium",
-      title: "Objeção de prazo — crie urgência real",
-      body: `${contactName} perguntou sobre tempo. Use isso a seu favor: mostre que o onboarding é rápido E crie urgência com uma oferta ou data limite genuína.`,
-      tag: "Gatilho: Urgência + Velocidade",
-      cta: `Boa pergunta ${firstName}! A implantação leva menos de 24h — você já estaria operando amanhã. E olha: tenho uma condição especial só até sexta-feira. Quer que eu monte uma proposta personalizada pra você agora?`,
+      title: "Objeção de prazo — transforme em urgência",
+      body: `${firstName} perguntou sobre tempo. Isso é uma oportunidade, não um obstáculo. Alunos que têm prazo (viagem, entrevista, promoção) são os que mais se comprometem. Mostre que o início é imediato e use o prazo DELES como âncora de urgência.`,
+      tag: "Gatilho: Urgência do próprio lead",
+      framework: "SNAP Selling — Priority",
+      cta: `Boa pergunta ${firstName}! Você começa na semana que vem — as primeiras aulas já mostram diferença. E olha: com o prazo que você mencionou, cada semana que você espera é uma semana a menos de preparação. Vamos começar logo pra você chegar preparado?`,
+    });
+  }
+
+  if (isPostpone) {
+    insights.push({
+      type: "warning",
+      priority: "high",
+      title: "Lead postergando — crie custo de espera",
+      body: `"Depois" é onde os sonhos morrem. ${firstName} está postergando porque não sente urgência REAL. Aplique a técnica de "custo de inação": calcule concretamente o que cada mês de espera custa (oportunidades perdidas, tempo sem progresso). Hormozi: "O pior momento pra plantar uma árvore foi há 20 anos. O segundo melhor é hoje."`,
+      tag: "Técnica: Custo de inação",
+      framework: "Alex Hormozi — Urgency without manipulation",
+      cta: `${firstName}, respeito sua decisão. Só queria te fazer uma pergunta sincera: se daqui a 6 meses você ainda não tiver o inglês que quer, como você vai se sentir? Porque posso te dizer que a maioria dos alunos que mais se arrependem são os que esperaram mais tempo. O melhor momento é agora — o segundo melhor é amanhã.`,
     });
   }
 
@@ -146,93 +243,197 @@ export function analyzeConversation(ctx: ConversationContext): SalesInsight[] {
     insights.push({
       type: "objection",
       priority: "high",
-      title: "Comparação com concorrente — diferencie-se",
-      body: `${contactName} está avaliando alternativas. Não critique concorrentes — mostre o que APENAS você oferece. Use a técnica "único mecanismo": o que só você tem que resolve o problema de forma única?`,
+      title: "Comparação com concorrente — mostre o mecanismo único",
+      body: `Não ataque concorrentes — isso diminui você. Em vez disso, use o "Unique Mechanism" de Hormozi: explique POR QUE a metodologia da Be Fluent produz resultados que outros não conseguem. Foque em conversação real, imersão e velocidade de fluência vs. gramática decorada.`,
       tag: "Técnica: Único mecanismo",
-      cta: `Ótimo que você esteja pesquisando ${firstName}! A maioria dos sistemas resolvem o básico. O que nos diferencia é [diferencial único]. Você já avaliou isso nos outros? Porque a diferença de resultado é grande.`,
+      framework: "Alex Hormozi — Unique Mechanism",
+      cta: `Ótimo que você esteja pesquisando ${firstName}! A diferença da Be Fluent não é só o conteúdo — é a metodologia de imersão conversacional. A maioria das escolas te ensina inglês como matéria. A gente te ensina inglês como idioma vivido. Você consegue comparar isso com o que você está vendo?`,
     });
   }
 
-  /* ── 3. Dor identificada ────────────────────────────────── */
+  if (isCold) {
+    insights.push({
+      type: "warning",
+      priority: "high",
+      title: "Lead hesitando — descubra o obstáculo real",
+      body: `"Vou pensar" raramente é sobre o produto. É sobre incerteza, medo de erro ou falta de clareza. Voss: use uma pergunta calibrada ("Como posso te ajudar a se sentir mais seguro?") em vez de pressão. O objetivo é nomear a resistência para dissolvê-la.`,
+      tag: "Técnica: Pergunta calibrada",
+      framework: "Chris Voss — Calibrated Questions",
+      cta: `Entendo ${firstName}, sem pressão alguma. Me ajuda a entender: o que faria você se sentir mais seguro para tomar essa decisão? Tem alguma dúvida específica que eu posso resolver agora?`,
+    });
+  }
+
+  if (isAuthority) {
+    insights.push({
+      type: "strategy",
+      priority: "high",
+      title: "Decisor externo — envolva o influenciador",
+      body: `${firstName} precisa consultar outra pessoa. Não espere passivamente — peça para incluir o decisor agora. Use a técnica de "multi-threading" de Chris Orlob: tente falar diretamente com quem decide. Se não for possível, equipe ${firstName} para vender internamente.`,
+      tag: "Técnica: Multi-threading",
+      framework: "Chris Orlob — Champion Building",
+      cta: `Claro ${firstName}! Você acha que eu poderia falar com ele/ela também? Ou se preferir, posso te mandar um resumo bem direto com os pontos principais pra você mostrar — fica muito mais fácil de explicar. O que funciona melhor pra vocês?`,
+    });
+  }
+
+  /* ═══════════════════════════════════════════════════════
+   * BLOCO 4 — DOR IDENTIFICADA
+   * ═════════════════════════════════════════════════════ */
+
   if (hasPain && !isBuying) {
+    const painLabel = painKw
+      ? `a dificuldade com "${painKw}"`
+      : "o problema que você mencionou";
     insights.push({
       type: "strategy",
       priority: "medium",
       title: "Dor identificada — amplifique antes de oferecer",
-      body: `${contactName} sinalizou um problema concreto. Antes de apresentar a solução, aprofunde a dor (Implication) — faça ${firstName} sentir o peso do problema não resolvido. Copy de resposta direta: dor → agitação → solução.`,
-      tag: "Framework: PAS (Problema-Agitação-Solução)",
-      cta: `E quanto tempo você já está lidando com isso ${firstName}? Imagino que deve ser bem desgastante. Nossos clientes que chegaram com essa mesma situação resolveram em menos de 2 semanas com a gente.`,
+      body: `${firstName} sinalizou ${painLabel}. NUNCA salte para a solução ainda — aprofunde a dor (Implication no SPIN). Faça ${firstName} sentir o peso do problema sem resolver. Só depois apresente a solução como alívio inevitável. Sequência: dor → agitação → solução → transformação.`,
+      tag: "Framework: PAS + SPIN Implication",
+      framework: "Neil Rackham — SPIN Implication",
+      cta: `${firstName}, faz quanto tempo você está lidando com isso? Eu imagino que deve ser bem frustrante [situação específica]. Os nossos alunos que chegaram com a mesma situação contam que foi transformador quando conseguiram [resultado]. Quer que eu te explique como funciona?`,
     });
   }
 
-  /* ── 4. Estratégia de canal ─────────────────────────────── */
-  if (noOut && inMessages.length > 0) {
+  /* ═══════════════════════════════════════════════════════
+   * BLOCO 5 — URGÊNCIA REAL DO LEAD
+   * ═════════════════════════════════════════════════════ */
+
+  if (hasUrgency && !isBuying) {
+    const urgencyLabel = urgencyKw ?? "prazo importante";
     insights.push({
-      type: "warning",
+      type: "closing",
       priority: "high",
-      title: `Sem resposta sua no ${channel === "whatsapp" ? "WhatsApp" : channel === "instagram" ? "Instagram" : "Messenger"}`,
-      body: "Você ainda não respondeu. Cada minuto sem resposta aumenta a chance de o lead ir para um concorrente. Responda agora — mesmo uma mensagem curta de acolhimento já quebra o silêncio.",
-      tag: "Regra: Velocidade de resposta",
-      cta: `Oi ${firstName}! Recebi sua mensagem aqui. Vou te dar atenção completa — pode falar à vontade!`,
+      title: `Urgência real detectada — ${urgencyLabel}`,
+      body: `${firstName} tem um evento real com prazo (${urgencyLabel}). Isso é ouro: a urgência JÁ EXISTE, você só precisa conectá-la à solução. Use o prazo DELES para criar momentum de decisão. SNAP Selling: torne sua oferta a PRIORIDADE lógica dado o prazo.`,
+      tag: "Gatilho: Urgência autêntica",
+      framework: "SNAP Selling — Priority + Cialdini Scarcity",
+      cta: `${firstName}, com ${urgencyLabel} em vista, cada semana que você esperar vai fazer diferença. Nossos alunos com prazo similar evoluíram muito mais rápido justamente pela urgência. Vamos garantir sua vaga agora pra você aproveitar ao máximo o tempo que tem?`,
     });
   }
 
-  /* ── 5. Estratégia baseada no estágio do funil ───────────── */
-  if (dealStage) {
-    const stageInsights: Record<string, SalesInsight> = {
-      "Novo lead": {
-        type: "strategy", priority: "medium",
-        title: "Etapa: Novo lead — objetivo é qualificar",
-        body: `Nesta fase não venda, qualifique. Descubra: budget, autoridade de decisão, necessidade e prazo (BANT). Uma pergunta aberta resolve isso em 1 mensagem.`,
-        tag: "Framework: BANT",
-        cta: `${firstName}, pra eu te ajudar melhor: você é o responsável pela decisão? E tem algum prazo em mente pra resolver isso?`,
-      },
-      "Qualificação": {
-        type: "strategy", priority: "medium",
-        title: "Etapa: Qualificação — mapeie a necessidade",
-        body: `Lead qualificado. Hora de apresentar valor antes do preço. Mostre um caso de sucesso de cliente parecido com ${firstName}.`,
-        tag: "Técnica: Social proof",
-        cta: `${firstName}, tenho um caso de um cliente no mesmo setor que você que resolveu exatamente isso. Posso compartilhar o resultado?`,
-      },
-      "Proposta": {
-        type: "strategy", priority: "high",
-        title: "Etapa: Proposta enviada — siga up!",
-        body: `Proposta enviada mas sem resposta é oportunidade em risco. O silêncio pós-proposta precisa de follow-up em até 24h. Use a técnica "estou do seu lado".`,
-        tag: "Técnica: Follow-up pós-proposta",
-        cta: `Oi ${firstName}! Só passando pra saber se você conseguiu ver a proposta. Tem alguma dúvida? Posso adaptar qualquer parte.`,
-      },
-      "Negociação": {
-        type: "closing", priority: "high",
-        title: "Etapa: Negociação — proteja o valor",
-        body: `Em negociação: nunca ceda preço sem contrapartida. Se der desconto, peça algo em troca (pagamento à vista, contrato anual, indicação). Mantenha a âncora alta.`,
-        tag: "Técnica: Concessão condicionada",
-        cta: `${firstName}, posso te ajudar no investimento — mas nesse caso precisaria do plano anual ou pagamento à vista. Funciona pra você?`,
-      },
-      "Fechamento": {
-        type: "closing", priority: "high",
-        title: "Etapa: Fechamento — remova o último obstáculo",
-        body: `Lead no fechamento. Pergunte diretamente o que falta para assinar. Identifique o último obstáculo e remova-o agora.`,
-        tag: "Técnica: Trial close",
-        cta: `${firstName}, o que falta pra você se sentir 100% seguro em fechar hoje?`,
-      },
-    };
-    const stageInsight = stageInsights[dealStage];
-    if (stageInsight) insights.push(stageInsight);
+  /* ═══════════════════════════════════════════════════════
+   * BLOCO 6 — INTERESSE / CURIOSIDADE
+   * ═════════════════════════════════════════════════════ */
+
+  if (isInterested && !isBuying) {
+    insights.push({
+      type: "interest",
+      priority: "medium",
+      title: "Lead aquecendo — use SPIN para aprofundar",
+      body: `${firstName} está engajado e curioso. É o momento perfeito para usar a sequência SPIN: descubra a Situação atual, mapeie o Problema, expanda as Implicações e mostre a Necessidade de solução. Uma boa pergunta aqui vale 10 argumentos de venda.`,
+      tag: "Técnica: SPIN Selling",
+      framework: "Neil Rackham — SPIN Need-payoff",
+      cta: `Que ótimo ${firstName}! Me conta uma coisa: em que situação você mais sente falta do inglês no dia a dia? No trabalho, nas viagens, nas redes sociais? Quero entender exatamente onde você quer chegar.`,
+    });
   }
 
-  /* ── 6. Lead quente de alto valor — atenção máxima ─────── */
+  /* ═══════════════════════════════════════════════════════
+   * BLOCO 7 — ESTRATÉGIA DE ETAPA DO FUNIL
+   * ═════════════════════════════════════════════════════ */
+
+  if (dealStage) {
+    const stageLow = dealStage.toLowerCase();
+
+    if (stageLow.includes("novo") || stageLow.includes("new") || stageLow.includes("inicial")) {
+      insights.push({
+        type: "strategy",
+        priority: "medium",
+        title: "Etapa: Novo lead — qualifique com BANT",
+        body: `Nesta fase: NÃO venda. Qualifique. Descubra Budget (quanto pode investir), Authority (decide sozinho?), Need (qual a dor real?) e Timeline (quando quer resolver?). Uma pergunta aberta bem feita resolve em 1 mensagem. Cialdini: estabeleça reciprocidade — dê algo de valor primeiro.`,
+        tag: "Framework: BANT",
+        framework: "Cialdini — Reciprocity + BANT",
+        cta: `${firstName}, pra eu te ajudar da melhor forma: você pensa em começar as aulas em breve ou ainda está só pesquisando? E tem algum objetivo específico — trabalho, viagem, promoção?`,
+      });
+    } else if (stageLow.includes("qualif")) {
+      insights.push({
+        type: "strategy",
+        priority: "medium",
+        title: "Etapa: Qualificação — social proof cirúrgico",
+        body: `Lead qualificado. Hora de apresentar valor antes de preço. Use prova social específica: cases de alunos com perfil SIMILAR ao de ${firstName} (mesma faixa de nível, mesmo objetivo). Especificidade vende mais que generalidade.`,
+        tag: "Técnica: Social proof específico",
+        framework: "Cialdini — Social Proof + Authority",
+        cta: `${firstName}, tenho um caso de uma aluna que chegou no mesmo nível que você e em 4 meses já estava conduzindo reuniões em inglês. Posso te contar como foi a jornada dela?`,
+      });
+    } else if (stageLow.includes("proposta") || stageLow.includes("proposal")) {
+      insights.push({
+        type: "strategy",
+        priority: "high",
+        title: "Etapa: Proposta enviada — follow-up em 24h",
+        body: `Proposta enviada sem resposta = oportunidade em risco. O silêncio pós-proposta NÃO é decisão — é indecisão. Use a técnica de Voss: "Parece que você ainda está avaliando" — labeling que convida o lead a revelar a real objeção.`,
+        tag: "Técnica: Tactical Empathy",
+        framework: "Chris Voss — Labeling + Follow-up",
+        cta: `Oi ${firstName}! Imagino que você deve ter muita coisa pra decidir nessa época. Teve alguma parte da proposta que ficou com dúvida? Posso ajustar qualquer coisa pra ficar mais fácil.`,
+      });
+    } else if (stageLow.includes("negoc")) {
+      insights.push({
+        type: "closing",
+        priority: "high",
+        title: "Etapa: Negociação — proteja o valor",
+        body: `Em negociação: NUNCA ceda preço sem contrapartida. Voss: use "Como posso fazer isso funcionar pra você?" — transfere a criatividade ao lead. Se der desconto, exija: pagamento à vista, plano anual ou indicação de amigo. Mantenha a âncora alta.`,
+        tag: "Técnica: Concessão condicionada",
+        framework: "Chris Voss — Ackerman Bargaining",
+        cta: `${firstName}, quero muito que você entre. Posso ver o que consigo fazer, mas nesse caso precisaria do plano anual ou pagamento à vista. Funciona pra você? Porque aí consigo um valor especial.`,
+      });
+    } else if (stageLow.includes("fecha") || stageLow.includes("close")) {
+      insights.push({
+        type: "closing",
+        priority: "high",
+        title: "Etapa: Fechamento — remova o último obstáculo",
+        body: `Lead no fechamento. Use o "trial close" de Belfort: pergunte diretamente o que impede o sim. Identifique o último obstáculo e elimine agora. Cialdini — Commitment: pequenas confirmações progressivas levam ao grande sim.`,
+        tag: "Técnica: Trial close",
+        framework: "Jordan Belfort — Straight Line + Cialdini Commitment",
+        cta: `${firstName}, o que falta pra você se sentir 100% seguro em começar hoje? Me fala o que está passando na sua cabeça que eu resolvo agora.`,
+      });
+    } else if (stageLow.includes("follow") || stageLow.includes("banho")) {
+      insights.push({
+        type: "strategy",
+        priority: "medium",
+        title: "Etapa: Follow-up — mantenha o contato vivo",
+        body: `Lead em "banho-maria" não é lead perdido — é lead que precisa de contexto novo. Volte com algo de VALOR (artigo, insight, resultado de aluno) antes de fazer nova oferta. Cialdini: reciprocidade cria obrigação psicológica de retorno.`,
+        tag: "Técnica: Value-first re-engagement",
+        framework: "Cialdini — Reciprocity",
+        cta: `Oi ${firstName}! Sei que você estava avaliando. Queria compartilhar algo que achei que pode te interessar: [resultado de aluno / dica rápida de inglês]. Temos novidade também nas turmas — posso te contar?`,
+      });
+    }
+  }
+
+  /* ═══════════════════════════════════════════════════════
+   * BLOCO 8 — LEAD PREMIUM (alto valor / hot)
+   * ═════════════════════════════════════════════════════ */
+
   if (isHot && isHighValue && !isBuying) {
     insights.push({
       type: "strategy",
       priority: "high",
-      title: `💎 Lead premium — R$ ${dealValue?.toLocaleString("pt-BR") ?? "alto valor"}`,
-      body: `Este é um lead de alto valor e alta probabilidade. Não deixe no fluxo comum — personalize o atendimento, ofereça uma demonstração ao vivo ou uma ligação com um especialista sênior.`,
+      title: `💎 Lead premium — tratamento VIP`,
+      body: `Lead de alto score e alto valor. NÃO trate como lead comum — personalize completamente. Ofereça: trial de aula, reunião com responsável, proposta personalizada. Hormozi: para leads premium, o atendimento EM SI já faz parte da oferta. Saia do script.`,
       tag: "Estratégia: White glove",
-      cta: `${firstName}, dado o seu perfil, quero que você tenha a melhor experiência possível. Posso te fazer uma demonstração personalizada de 20 minutos com nosso especialista? Qual o melhor horário pra você?`,
+      framework: "Alex Hormozi — Grand Slam Offer para leads VIP",
+      cta: `${firstName}, dado o seu perfil, quero que você tenha a melhor experiência possível antes de qualquer decisão. Posso te oferecer uma aula experimental gratuita com um dos nossos melhores professores? Sem compromisso — você conhece a metodologia na prática.`,
     });
   }
 
-  /* ── Ordena por prioridade ─────────────────────────────── */
+  /* ═══════════════════════════════════════════════════════
+   * BLOCO 9 — ENGAJAMENTO GERAL
+   * ═════════════════════════════════════════════════════ */
+
+  if (inMessages.length > 0 && !isBuying && !isPriceObj && !isCompetitor && !isCold && !isInterested && !hasPain) {
+    const sentLabel = sentiment > 1 ? "positivo" : sentiment < -1 ? "negativo" : "neutro";
+    insights.push({
+      type: "interest",
+      priority: "low",
+      title: `Engajamento ${sentLabel} — score ${contactScore} pts`,
+      body: `${firstName} tem ${inMessages.length} mensagem${inMessages.length > 1 ? "s" : ""} nesta conversa. ${contactScore >= 60 ? "Score alto — avance para qualificação profunda." : contactScore >= 40 ? "Score médio — explore dores e objetivos." : "Score baixo — construa rapport antes de qualificar."}`,
+      tag: contactScore >= 60 ? "Status: Pronto para qualificação" : "Status: Construindo rapport",
+    });
+  }
+
+  /* ═══════════════════════════════════════════════════════
+   * ORDENA e limita
+   * ═════════════════════════════════════════════════════ */
+
   const order = { high: 0, medium: 1, low: 2 };
-  return insights.sort((a, b) => order[a.priority] - order[b.priority]).slice(0, 6);
+  return insights
+    .sort((a, b) => order[a.priority] - order[b.priority])
+    .slice(0, 5);
 }
