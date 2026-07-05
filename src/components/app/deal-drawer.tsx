@@ -147,7 +147,7 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
 
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="w-full max-w-xl p-0">
+      <SheetContent className="w-full max-w-xl overflow-y-auto p-0">
         {/* Header */}
         <div className="border-b border-border/70 p-5">
           <div className="flex items-center gap-2 pr-8">
@@ -272,7 +272,7 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
         )}
 
         {/* Tabs */}
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="p-5">
           <Tabs defaultValue="detalhes">
             <TabsList className="w-full">
               <TabsTrigger value="detalhes" className="flex-1">Detalhes</TabsTrigger>
