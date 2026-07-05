@@ -128,10 +128,23 @@ export interface Activity {
   id: string;
   type: "task" | "call" | "meeting" | "email";
   title: string;
-  due: string;
+  due: string;         // data legível (DD/MM/YYYY ou "Hoje")
+  dueDate?: string;    // ISO date para ordenação (YYYY-MM-DD)
+  dueTime?: string;    // HH:MM
   contact: string;
   done: boolean;
   dealId?: string;
+  notes?: string;      // anotação vinculada à tarefa
+}
+
+/** Configurações financeiras para cálculo real de CAC, LTV, Ticket Médio */
+export interface FinancialConfig {
+  monthlyMarketingSpend: number;    // gasto mensal em marketing (R$)
+  avgContractMonths: number;        // duração média do contrato em meses
+  monthlyChurnRate: number;         // taxa de churn mensal (0-100%)
+  avgCostPerStudent: number;        // custo operacional por aluno/mês (R$)
+  revenueGoalMonthly: number;       // meta de receita mensal (R$)
+  leadsPerMonth: number;            // leads gerados por mês (para CAC por lead)
 }
 export interface Company {
   id: string;
@@ -171,6 +184,7 @@ interface StoreState {
   automations: Automation[];
   scoringRules: ScoringRule[];
   connectedChannels: ConnectedChannel[];
+  financialConfig: FinancialConfig;
 
   // pipelines & stages
   addPipeline: (name: string) => string;
@@ -195,7 +209,14 @@ interface StoreState {
   updateContact: (id: string, patch: Partial<Contact>) => void;
   deleteContact: (id: string) => void;
   addActivity: (a: Omit<Activity, "id" | "done">) => void;
+  updateActivity: (id: string, patch: Partial<Activity>) => void;
+  deleteActivity: (id: string) => void;
   toggleActivity: (id: string) => void;
+
+  updateFinancialConfig: (patch: Partial<FinancialConfig>) => void;
+
+  /** Registra venda: marca won + bump de score + move para funil onboarding D1 */
+  winDealAndOnboard: (dealId: string) => void;
 
   addCompany: (c: Omit<Company, "id">) => void;
   updateCompany: (id: string, patch: Partial<Company>) => void;
@@ -246,7 +267,15 @@ function seed() {
     { id: uid(), label: "Origem: Indicacao", points: 20 },
     { id: uid(), label: "Sem resposta ha 14 dias", points: -10 },
   ];
-  return { pipelines, deals, contacts: [...CONTACTS], activities: [...ACTIVITIES], companies, automations, scoringRules, connectedChannels: [] };
+  const financialConfig: FinancialConfig = {
+    monthlyMarketingSpend: 0,
+    avgContractMonths: 12,
+    monthlyChurnRate: 5,
+    avgCostPerStudent: 0,
+    revenueGoalMonthly: 0,
+    leadsPerMonth: 0,
+  };
+  return { pipelines, deals, contacts: [...CONTACTS], activities: [...ACTIVITIES], companies, automations, scoringRules, connectedChannels: [], financialConfig };
 }
 
 const uid = () =>
@@ -395,8 +424,82 @@ export const useStore = create<StoreState>()(
         }));
       },
       addActivity: (a) => set((s) => ({ activities: [{ ...a, id: uid(), done: false }, ...s.activities] })),
+      updateActivity: (id, patch) =>
+        set((s) => ({ activities: s.activities.map((a) => (a.id === id ? { ...a, ...patch } : a)) })),
+      deleteActivity: (id) =>
+        set((s) => ({ activities: s.activities.filter((a) => a.id !== id) })),
       toggleActivity: (id) =>
         set((s) => ({ activities: s.activities.map((a) => (a.id === id ? { ...a, done: !a.done } : a)) })),
+
+      updateFinancialConfig: (patch) =>
+        set((s) => ({ financialConfig: { ...s.financialConfig, ...patch } })),
+
+      winDealAndOnboard: (dealId) => {
+        const state = get();
+        const deal = state.deals.find((d) => d.id === dealId);
+        if (!deal) return;
+
+        // 1. Marca como won com histórico
+        const wonEntry = { ts: new Date().toISOString(), text: "Venda registrada — aluno convertido" };
+
+        // 2. Bump de score do contato: +50 pts pela conversão (embasado: compra real)
+        const contact = state.contacts.find((c) => c.name === deal.contact || c.id === deal.contactId);
+        if (contact) {
+          const newScore = Math.min(100, contact.score + 50);
+          set((s) => ({
+            contacts: s.contacts.map((c) =>
+              c.id === contact.id ? { ...c, score: newScore } : c
+            ),
+          }));
+        }
+
+        // 3. Tenta encontrar funil de onboarding e etapa D1
+        const onboardingPipeline = state.pipelines.find((p) =>
+          p.name.toLowerCase().includes("onboard") ||
+          p.name.toLowerCase().includes("d1") ||
+          p.name.toLowerCase().includes("ps-venda") ||
+          p.name.toLowerCase().includes("pos")
+        );
+        const d1Stage = onboardingPipeline?.stages.find((s) =>
+          s.name.toLowerCase().includes("d1") ||
+          s.name.toLowerCase().includes("01 dia") ||
+          s.name.toLowerCase().includes("pos") ||
+          s.name.toLowerCase().includes("primeiro")
+        ) ?? onboardingPipeline?.stages[0];
+
+        // 4. Marca won e (se houver onboarding) cria novo deal lá
+        set((s) => ({
+          deals: s.deals.map((d) =>
+            d.id === dealId
+              ? { ...d, status: "won", history: [...(d.history ?? []), wonEntry] }
+              : d
+          ),
+        }));
+
+        if (onboardingPipeline && d1Stage) {
+          set((s) => ({
+            deals: [
+              ...s.deals,
+              {
+                id: uid(),
+                title: deal.title,
+                value: deal.value,
+                pipelineId: onboardingPipeline.id,
+                stageId: d1Stage.id,
+                contact: deal.contact,
+                contactId: deal.contactId,
+                owner: deal.owner,
+                tags: deal.tags,
+                status: "open" as const,
+                createdAt: new Date().toISOString(),
+                stageEnteredAt: new Date().toISOString(),
+                notes: `Convertido do funil comercial em ${new Date().toLocaleDateString("pt-BR")}`,
+                history: [{ ts: new Date().toISOString(), text: `Iniciou onboarding — etapa ${d1Stage.name}` }],
+              },
+            ],
+          }));
+        }
+      },
 
       addCompany: (c) => set((s) => ({ companies: [{ ...c, id: uid() }, ...s.companies] })),
       updateCompany: (id, patch) =>
@@ -427,13 +530,18 @@ export const useStore = create<StoreState>()(
     }),
     {
       name: "beely-store",
-      version: 4,
+      version: 5,
       skipHydration: true,
       migrate: (_persisted: unknown, fromVersion) => {
         if (fromVersion < 4) return seed() as unknown as StoreState;
         const base = seed();
         const prev = (_persisted ?? {}) as Partial<StoreState>;
-        return { ...base, ...prev, connectedChannels: prev.connectedChannels ?? [] } as StoreState;
+        return {
+          ...base,
+          ...prev,
+          connectedChannels: prev.connectedChannels ?? [],
+          financialConfig: { ...base.financialConfig, ...(prev.financialConfig ?? {}) },
+        } as StoreState;
       },
     }
   )

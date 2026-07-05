@@ -260,12 +260,13 @@ function SortableColumn({
 
       <div
         className={cn(
-          "flex min-h-32 flex-1 flex-col gap-2 rounded-xl border border-dashed border-border bg-white/[0.02] p-2 transition-colors",
+          "flex flex-1 flex-col gap-2 rounded-xl border border-dashed border-border bg-white/[0.02] p-2 transition-colors",
+          "max-h-[calc(100vh-280px)] overflow-y-auto",
           isOver && "border-primary bg-accent/40"
         )}
       >
         {children}
-        <button onClick={onAddDeal} className="mt-1 flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/70 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary">
+        <button onClick={onAddDeal} className="mt-1 flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/70 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary">
           <Plus className="size-3.5" /> Adicionar negocio
         </button>
       </div>

@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { CopyField } from "./copy-field";
 import { ChannelConnect } from "./channel-connect";
-import { Webhook, KeyRound, Plus, Trash2, RefreshCw, Eye, EyeOff, UserPlus, Mail, Shield, Crown, MoreHorizontal, Pencil, UserMinus } from "lucide-react";
+import { Webhook, KeyRound, Plus, Trash2, RefreshCw, Eye, EyeOff, UserPlus, Mail, Shield, Crown, MoreHorizontal, Pencil, UserMinus, Check } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 /* ── Logos SVG oficiais dos canais ──────────────────────────── */
@@ -58,8 +58,9 @@ function MessengerLogo({ className }: { className?: string }) {
   );
 }
 import { PLANS } from "@/lib/site";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, cn } from "@/lib/utils";
 import { useStore, useHydrated } from "@/lib/store";
+import { DollarSign, TrendingUp, Users, BarChart2, HelpCircle } from "lucide-react";
 
 /* ── Tipos de perfil / membro ──────────────────────────────── */
 type MemberRole =
@@ -453,6 +454,7 @@ export function SettingsView({ defaultTab = "geral" }: { defaultTab?: string }) 
         <TabsTrigger value="integracoes">Integrações</TabsTrigger>
         <TabsTrigger value="canais">Canais</TabsTrigger>
         <TabsTrigger value="equipe">Equipe</TabsTrigger>
+        <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
         <TabsTrigger value="planos">Planos</TabsTrigger>
       </TabsList>
 
@@ -713,6 +715,267 @@ export function SettingsView({ defaultTab = "geral" }: { defaultTab?: string }) 
           ))}
         </div>
       </TabsContent>
+
+      {/* ─── Financeiro ────────────────────────────────────────── */}
+      <TabsContent value="financeiro">
+        <FinancialConfigTab />
+      </TabsContent>
     </Tabs>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ABA FINANCEIRO — configurações para CAC / LTV / Ticket Médio
+   ══════════════════════════════════════════════════════════════ */
+function FinancialConfigTab() {
+  const { financialConfig, updateFinancialConfig, deals, contacts } = useStore();
+  const [cfg, setCfg] = useState({ ...financialConfig });
+  const [saved, setSaved] = useState(false);
+
+  function save() {
+    updateFinancialConfig(cfg);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+    toast.success("Configuracoes financeiras salvas!");
+  }
+
+  // Calculos reais baseados nos dados do store + config inserida
+  const won       = deals.filter((d) => d.status === "won");
+  const totalWon  = won.length;
+  const wonRevenue = won.reduce((s, d) => s + d.value, 0);
+
+  // Ticket Médio real
+  const avgTicket = totalWon > 0 ? wonRevenue / totalWon : 0;
+
+  // CAC = Gasto em marketing / clientes convertidos no período
+  // Fórmula embasada: CAC = Investimento em Aquisição / Numero de Novos Clientes
+  const cac = totalWon > 0 && cfg.monthlyMarketingSpend > 0
+    ? cfg.monthlyMarketingSpend / totalWon
+    : 0;
+
+  // LTV = Ticket Médio × Duração média do contrato × (1 - Churn mensal)
+  // Fórmula: LTV = (Receita média por cliente) / Churn Rate mensal
+  // Versão conservadora: LTV = avgTicket × avgContractMonths × (1 - churnRate/100)
+  const churnDecimal = cfg.monthlyChurnRate / 100;
+  const ltv = churnDecimal > 0
+    ? (avgTicket / churnDecimal) * (1 - Math.pow(1 - churnDecimal, cfg.avgContractMonths))
+    : avgTicket * cfg.avgContractMonths;
+
+  // LTV/CAC ratio — saudável acima de 3x
+  const ltvCac = cac > 0 ? ltv / cac : 0;
+
+  // Margem por aluno = Ticket - Custo operacional
+  const marginPerStudent = avgTicket - cfg.avgCostPerStudent;
+
+  // CAC por lead (lead gerado, não convertido)
+  const cacPerLead = cfg.leadsPerMonth > 0 && cfg.monthlyMarketingSpend > 0
+    ? cfg.monthlyMarketingSpend / cfg.leadsPerMonth
+    : 0;
+
+  const convRate = contacts.length > 0 ? (totalWon / contacts.length) * 100 : 0;
+
+  const F = ({ label, value, tip }: { label: string; value: string; tip?: string }) => (
+    <div className="space-y-0.5">
+      <div className="flex items-center gap-1">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        {tip && <span title={tip} className="cursor-help text-muted-foreground/50"><HelpCircle className="size-3" /></span>}
+      </div>
+      <p className="font-display text-lg font-bold">{value}</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Resultados calculados */}
+      <Card className="border-primary/30 bg-primary/[0.03]">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <BarChart2 className="size-4 text-primary" /> Métricas calculadas em tempo real
+          </CardTitle>
+          <CardDescription>
+            Baseadas nos dados reais do CRM + configurações que você informar abaixo.
+            {totalWon === 0 && " Registre vendas para ver cálculos precisos."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            <F
+              label="Ticket Médio"
+              value={formatCurrency(avgTicket)}
+              tip="Receita total dos contratos fechados ÷ número de alunos convertidos"
+            />
+            <F
+              label="CAC (por aluno)"
+              value={cac > 0 ? formatCurrency(cac) : "Preencha abaixo"}
+              tip="Investimento em marketing ÷ número de alunos convertidos no período"
+            />
+            <F
+              label="CAC (por lead)"
+              value={cacPerLead > 0 ? formatCurrency(cacPerLead) : "Preencha abaixo"}
+              tip="Investimento em marketing ÷ total de leads gerados no mês"
+            />
+            <F
+              label="LTV estimado"
+              value={ltv > 0 ? formatCurrency(ltv) : "Preencha abaixo"}
+              tip="Valor médio gerado por aluno durante toda a permanência = Ticket ÷ Churn × fator de duração"
+            />
+            <F
+              label="LTV / CAC"
+              value={ltvCac > 0 ? `${ltvCac.toFixed(1)}x` : "—"}
+              tip="Saudável acima de 3x. Abaixo de 1x significa que você gasta mais para adquirir do que recebe."
+            />
+          </div>
+
+          {ltvCac > 0 && (
+            <div className="mt-4 space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">LTV/CAC ratio</span>
+                <span className={cn("font-semibold", ltvCac >= 3 ? "text-green-400" : ltvCac >= 1 ? "text-yellow-400" : "text-red-400")}>
+                  {ltvCac >= 3 ? "Saudável" : ltvCac >= 1 ? "Atenção" : "Critico"} ({ltvCac.toFixed(1)}x)
+                </span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className={cn("h-full rounded-full transition-all", ltvCac >= 3 ? "bg-green-400" : ltvCac >= 1 ? "bg-yellow-400" : "bg-red-400")}
+                  style={{ width: `${Math.min(ltvCac / 5, 1) * 100}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground">Meta: LTV/CAC ≥ 3x (referência SaaS/Serviços de alto valor)</p>
+            </div>
+          )}
+
+          <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
+            <div className="rounded-lg border border-border bg-white/[0.02] p-3 text-center">
+              <p className="font-display text-base font-bold">{formatCurrency(marginPerStudent)}</p>
+              <p className="text-xs text-muted-foreground">Margem por aluno</p>
+            </div>
+            <div className="rounded-lg border border-border bg-white/[0.02] p-3 text-center">
+              <p className="font-display text-base font-bold">{convRate.toFixed(1)}%</p>
+              <p className="text-xs text-muted-foreground">Taxa de conversão</p>
+            </div>
+            <div className="rounded-lg border border-border bg-white/[0.02] p-3 text-center">
+              <p className="font-display text-base font-bold">{totalWon}</p>
+              <p className="text-xs text-muted-foreground">Alunos convertidos</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Formulário de configuração */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <DollarSign className="size-4 text-primary" /> Dados de entrada
+          </CardTitle>
+          <CardDescription>
+            Preencha para que o sistema calcule CAC, LTV e margem com precisão real.
+            Nenhum campo é obrigatório — preencha o que tiver.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* Marketing */}
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+              <TrendingUp className="size-3.5" /> Investimento em aquisição
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FinInput
+                label="Gasto mensal em marketing (R$)"
+                tip="Tráfego pago, agência, freelancers, ferramentas de marketing"
+                value={cfg.monthlyMarketingSpend}
+                onChange={(v) => setCfg((c) => ({ ...c, monthlyMarketingSpend: v }))}
+              />
+              <FinInput
+                label="Leads gerados por mês"
+                tip="Número médio de novos leads entrando no funil por mês"
+                value={cfg.leadsPerMonth}
+                onChange={(v) => setCfg((c) => ({ ...c, leadsPerMonth: v }))}
+              />
+            </div>
+          </div>
+
+          {/* Retenção */}
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+              <Users className="size-3.5" /> Retenção e duração
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FinInput
+                label="Duração média do contrato (meses)"
+                tip="Por quantos meses em média o aluno permanece matriculado"
+                value={cfg.avgContractMonths}
+                onChange={(v) => setCfg((c) => ({ ...c, avgContractMonths: v }))}
+              />
+              <FinInput
+                label="Churn mensal (%)"
+                tip="Percentual de alunos que cancelam por mês. Ex: 5 = 5%"
+                value={cfg.monthlyChurnRate}
+                onChange={(v) => setCfg((c) => ({ ...c, monthlyChurnRate: v }))}
+              />
+            </div>
+          </div>
+
+          {/* Custos */}
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+              <BarChart2 className="size-3.5" /> Estrutura de custos
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FinInput
+                label="Custo operacional por aluno/mês (R$)"
+                tip="Inclui: professor, plataforma, material, suporte — por aluno"
+                value={cfg.avgCostPerStudent}
+                onChange={(v) => setCfg((c) => ({ ...c, avgCostPerStudent: v }))}
+              />
+              <FinInput
+                label="Meta de receita mensal (R$)"
+                tip="Quanto você quer faturar por mês para comparar com o pipeline"
+                value={cfg.revenueGoalMonthly}
+                onChange={(v) => setCfg((c) => ({ ...c, revenueGoalMonthly: v }))}
+              />
+            </div>
+          </div>
+
+          <Button onClick={save} className="w-full gap-2">
+            {saved ? <><Check className="size-4" /> Salvo!</> : <><DollarSign className="size-4" /> Salvar configuracoes</>}
+          </Button>
+
+          <div className="rounded-lg border border-border bg-white/[0.02] p-3 text-xs text-muted-foreground space-y-1">
+            <p className="font-semibold text-foreground/70">Como os calculos sao feitos:</p>
+            <p>• <strong>Ticket Médio</strong> = Soma de todas as vendas ÷ Número de alunos convertidos</p>
+            <p>• <strong>CAC por aluno</strong> = Investimento em marketing ÷ Alunos convertidos no periodo</p>
+            <p>• <strong>CAC por lead</strong> = Investimento em marketing ÷ Leads gerados no mes</p>
+            <p>• <strong>LTV</strong> = (Ticket Médio ÷ Churn mensal) × Fator de duracao do contrato</p>
+            <p>• <strong>LTV/CAC</strong> ≥ 3x = saudavel; ≥ 1x = cuidado; &lt; 1x = critico</p>
+            <p>• <strong>Margem</strong> = Ticket Médio − Custo operacional por aluno</p>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function FinInput({
+  label, tip, value, onChange,
+}: {
+  label: string; tip: string; value: number; onChange: (v: number) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-1">
+        <Label className="text-xs">{label}</Label>
+        <span title={tip} className="cursor-help text-muted-foreground/50"><HelpCircle className="size-3" /></span>
+      </div>
+      <Input
+        type="number"
+        min="0"
+        step="0.01"
+        value={value || ""}
+        onChange={(e) => onChange(Number(e.target.value) || 0)}
+        placeholder="0"
+        className="h-9"
+      />
+      <p className="text-[10px] text-muted-foreground">{tip}</p>
+    </div>
   );
 }
