@@ -2,15 +2,17 @@
 
 import { useEffect, useRef } from "react";
 import { useStore } from "@/lib/store";
-import { loadAll, seedSupabase } from "@/lib/db";
+import { loadAll } from "@/lib/db";
 import type { DbSnapshot } from "@/lib/db";
 
 /**
  * Hidrata o store Zustand com dados do Supabase na inicialização.
- * - Se o banco tiver dados, substitui o seed local pelos dados reais.
- * - Se o banco estiver vazio, faz seed com os dados atuais do store.
  *
- * Deve ser montado UMA VEZ no layout raiz, após a hidratação do localStorage.
+ * Fluxo:
+ * 1. Chama loadAll() — tenta carregar dados do Supabase
+ * 2. Se banco tem dados → hidrata store (Supabase vira source of truth)
+ * 3. Se banco vazio → envia snapshot do localStorage para /api/migrate
+ *    e marca localStorage como migrado para não repetir
  */
 export function useSupabaseSync() {
   const synced = useRef(false);
@@ -20,17 +22,15 @@ export function useSupabaseSync() {
     synced.current = true;
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    if (!supabaseUrl) {
-      // Supabase não configurado — silenciosamente ignora
-      return;
-    }
+    if (!supabaseUrl) return;
 
-    (async () => {
+    // Aguarda hidratação do localStorage antes de sincronizar
+    const run = async () => {
       try {
         const snapshot = await loadAll();
 
         if (snapshot) {
-          // Banco tem dados — hidrata o store com dados reais do Supabase
+          // Banco tem dados — hidrata o store
           useStore.setState({
             pipelines:         snapshot.pipelines,
             deals:             snapshot.deals,
@@ -45,9 +45,15 @@ export function useSupabaseSync() {
           });
           console.log("[sync] Store hidratado do Supabase");
         } else {
-          // Banco vazio — faz seed com dados locais atuais (localStorage ou demo)
+          // Banco vazio — migra dados do localStorage para o Supabase
+          const alreadyMigrated = localStorage.getItem("beely-migrated-to-supabase");
+          if (alreadyMigrated) {
+            console.log("[sync] Migração já realizada anteriormente");
+            return;
+          }
+
           const state = useStore.getState();
-          const localSnapshot: DbSnapshot = {
+          const payload: DbSnapshot = {
             pipelines:         state.pipelines,
             deals:             state.deals,
             contacts:          state.contacts,
@@ -59,12 +65,35 @@ export function useSupabaseSync() {
             integrations:      state.integrations,
             financialConfig:   state.financialConfig,
           };
-          await seedSupabase(localSnapshot);
-          console.log("[sync] Seed inicial enviado ao Supabase");
+
+          const res = await fetch("/api/migrate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          const result = await res.json();
+
+          if (result.ok) {
+            localStorage.setItem("beely-migrated-to-supabase", new Date().toISOString());
+            console.log("[sync] Migração concluída:", result.migrated ?? "skipped");
+          } else {
+            console.error("[sync] Erros na migração:", result.errors);
+          }
         }
       } catch (e) {
         console.error("[sync] Falha ao sincronizar com Supabase:", e);
       }
-    })();
+    };
+
+    // Aguarda a hidratação do persist antes de rodar
+    if (useStore.persist.hasHydrated()) {
+      run();
+    } else {
+      const unsub = useStore.persist.onFinishHydration(() => {
+        unsub();
+        run();
+      });
+    }
   }, []);
 }

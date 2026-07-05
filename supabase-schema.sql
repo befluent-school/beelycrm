@@ -184,8 +184,48 @@ create table if not exists financial_config (
 -- Garante que existe a linha default
 insert into financial_config (id) values ('default') on conflict do nothing;
 
+-- ── Organizations ────────────────────────────────────────────
+create table if not exists organizations (
+  id          text primary key default gen_random_uuid()::text,
+  name        text not null,
+  email       text,
+  plan        text default 'free',
+  created_at  timestamptz default now(),
+  updated_at  timestamptz default now()
+);
+
+-- ── Profiles (usuários da organização) ───────────────────────
+create table if not exists profiles (
+  id           text primary key default gen_random_uuid()::text,
+  org_id       text references organizations(id) on delete cascade,
+  name         text not null,
+  email        text,
+  role         text default 'member',
+  avatar_url   text,
+  created_at   timestamptz default now(),
+  updated_at   timestamptz default now()
+);
+
+-- ── Stages (desnormalizado para acesso rápido por pipeline) ──
+create table if not exists stages (
+  id           text primary key,
+  pipeline_id  text references pipelines(id) on delete cascade,
+  name         text not null,
+  probability  int  default 0,
+  position     int  default 0,
+  created_at   timestamptz default now()
+);
+
+-- Seed da organização Be Fluent
+insert into organizations (id, name, email, plan)
+values ('org-befluent', 'Be Fluent Idiomas & Ensino LTDA', 'befluentschooll@gmail.com', 'enterprise')
+on conflict (id) do nothing;
+
+insert into profiles (id, org_id, name, email, role)
+values ('profile-owner', 'org-befluent', 'Be Fluent', 'befluentschooll@gmail.com', 'owner')
+on conflict (id) do nothing;
+
 -- ── Row Level Security — desabilita (app single-tenant) ───────
--- Se quiser multi-tenant futuramente, habilite RLS e adicione políticas.
 alter table pipelines          disable row level security;
 alter table contacts           disable row level security;
 alter table deals              disable row level security;
@@ -196,6 +236,9 @@ alter table scoring_rules      disable row level security;
 alter table connected_channels disable row level security;
 alter table integrations       disable row level security;
 alter table financial_config   disable row level security;
+alter table organizations      disable row level security;
+alter table profiles           disable row level security;
+alter table stages             disable row level security;
 
 -- ── Índices úteis ─────────────────────────────────────────────
 create index if not exists idx_deals_pipeline    on deals(pipeline_id);
@@ -204,3 +247,5 @@ create index if not exists idx_deals_status      on deals(status);
 create index if not exists idx_contacts_phone    on contacts(phone);
 create index if not exists idx_contacts_email    on contacts(email);
 create index if not exists idx_activities_deal   on activities(deal_id);
+create index if not exists idx_profiles_org      on profiles(org_id);
+create index if not exists idx_stages_pipeline   on stages(pipeline_id);
