@@ -116,42 +116,31 @@ interface LocalConv {
 }
 type Thread = { from: "in" | "out"; text: string; time: string };
 
-/* ── SSE hook para mensagens em tempo real ──────────────────── */
-function useInboxSSE(onMessage: (msg: {
+/* ── Polling para mensagens em tempo real (4s) ──────────────── */
+function useInboxPolling(onMessage: (msg: {
   id: string; channel: Channel; from: string; fromName: string; text: string; timestamp: number;
 }) => void) {
-  const lastTs = useRef(0);
+  const lastTs  = useRef(0);
+  const seenIds = useRef(new Set<string>());
 
   useEffect(() => {
-    let es: EventSource | null = null;
-    let retryTimer: ReturnType<typeof setTimeout>;
-
-    function connect() {
-      const url = `/api/inbox/events?since=${lastTs.current}`;
-      es = new EventSource(url);
-
-      es.onmessage = (evt) => {
-        try {
-          const msg = JSON.parse(evt.data);
-          if (msg.timestamp && msg.timestamp > lastTs.current) {
-            lastTs.current = msg.timestamp;
-            onMessage(msg);
-          }
-        } catch { /* ignore parse errors */ }
-      };
-
-      es.onerror = () => {
-        es?.close();
-        retryTimer = setTimeout(connect, 5000);
-      };
+    async function poll() {
+      try {
+        const res = await fetch(`/api/inbox/messages?since=${lastTs.current}`);
+        if (!res.ok) return;
+        const msgs = await res.json() as { id: string; channel: Channel; from: string; fromName: string; text: string; timestamp: number }[];
+        for (const msg of msgs) {
+          if (seenIds.current.has(msg.id)) continue;
+          seenIds.current.add(msg.id);
+          if (msg.timestamp > lastTs.current) lastTs.current = msg.timestamp;
+          onMessage(msg);
+        }
+      } catch { /* rede offline, tenta de novo no próximo tick */ }
     }
 
-    connect();
-    return () => {
-      es?.close();
-      clearTimeout(retryTimer);
-    };
-  // onMessage é estável via useCallback no InboxView
+    poll(); // imediato na montagem
+    const interval = setInterval(poll, 4000);
+    return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }
@@ -596,7 +585,7 @@ export function InboxView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useInboxSSE(handleSseMessage);
+  useInboxPolling(handleSseMessage);
 
   /* Demo quando canal conectado (apenas se não houver mensagens reais) */
   useEffect(() => {
