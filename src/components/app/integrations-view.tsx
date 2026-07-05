@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CopyField } from "@/components/app/copy-field";
-import { CheckCircle2, Plus, Settings } from "lucide-react";
+import { CheckCircle2, Plus, Settings, Trash2, ExternalLink, AlertCircle, Info } from "lucide-react";
+import { useStore, useHydrated } from "@/lib/store";
 
 /* ── SVG logos oficiais ────────────────────────────────────── */
 function LogoWhatsApp({ className }: { className?: string }) {
@@ -307,6 +308,17 @@ function LogoShopify({ className }: { className?: string }) {
   );
 }
 
+function LogoMetaBusiness({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="48" height="48" rx="12" fill="#0866FF"/>
+      <path d="M24 10C16.268 10 10 16.268 10 24s6.268 14 14 14 14-6.268 14-14S31.732 10 24 10zm-1 20.5v-9l7.5 4.5-7.5 4.5z" fill="white"/>
+      <circle cx="24" cy="24" r="10" stroke="white" strokeWidth="1.5" fill="none"/>
+      <path d="M17 24c0-3.866 3.134-7 7-7 1.8 0 3.44.682 4.67 1.8" stroke="white" strokeWidth="2" strokeLinecap="round" fill="none"/>
+    </svg>
+  );
+}
+
 /* ── Catálogo de integrações ───────────────────────────────── */
 interface IntegrationDef {
   id: string;
@@ -314,113 +326,286 @@ interface IntegrationDef {
   description: string;
   category: string;
   LogoComponent: React.ComponentType<{ className?: string }>;
-  fields?: { name: string; label: string; placeholder?: string }[];
+  fields?: { name: string; label: string; placeholder?: string; required?: boolean }[];
   webhookSlug?: string;
+  guideSteps?: string[];
+  guideLink?: string;
+  guideLinkLabel?: string;
 }
 
 const INTEGRATIONS: IntegrationDef[] = [
   // Mensageiros
-  { id: "whatsapp",  name: "WhatsApp Business", description: "Receba e envie mensagens via Meta Cloud API, Z-API ou Evolution.", category: "Mensageiros", LogoComponent: LogoWhatsApp,
-    fields: [{ name: "phone_id", label: "Phone Number ID", placeholder: "1029384756" }, { name: "token", label: "Access Token", placeholder: "EAAB..." }] },
-  { id: "instagram", name: "Instagram Direct",  description: "Gerencie DMs do Instagram no inbox do Beely.", category: "Mensageiros", LogoComponent: LogoInstagram, webhookSlug: "instagram",
-    fields: [{ name: "ig_id", label: "Instagram Business ID", placeholder: "1784..." }, { name: "token", label: "Access Token", placeholder: "EAAB..." }] },
-  { id: "messenger", name: "Messenger", description: "Integre o Messenger da sua página do Facebook.", category: "Mensageiros", LogoComponent: LogoMessenger, webhookSlug: "messenger",
-    fields: [{ name: "page_id", label: "Page ID", placeholder: "1029..." }, { name: "token", label: "Page Access Token", placeholder: "EAAB..." }] },
-  { id: "telegram",  name: "Telegram", description: "Bot do Telegram para atendimento e notificações.", category: "Mensageiros", LogoComponent: LogoTelegram,
-    fields: [{ name: "bot_token", label: "Bot Token", placeholder: "123456:ABC..." }] },
-  { id: "tiktok",    name: "TikTok", description: "Receba mensagens de leads vindos do TikTok.", category: "Mensageiros", LogoComponent: LogoTikTok },
+  {
+    id: "whatsapp",
+    name: "WhatsApp Business",
+    description: "Receba e envie mensagens via Meta Cloud API, Z-API ou Evolution.",
+    category: "Mensageiros",
+    LogoComponent: LogoWhatsApp,
+    fields: [
+      { name: "phone_id", label: "Phone Number ID", placeholder: "1029384756", required: true },
+      { name: "token", label: "Access Token", placeholder: "EAAB...", required: true },
+    ],
+    guideSteps: [
+      "Acesse business.facebook.com e crie um App do tipo Business.",
+      "No painel do App, adicione o produto 'WhatsApp'.",
+      "Em WhatsApp > Configuração, copie o Phone Number ID.",
+      "Gere um Access Token permanente em System Users > Gerar token.",
+      "Cole ambos os valores abaixo e salve.",
+    ],
+  },
+  {
+    id: "instagram",
+    name: "Instagram Direct",
+    description: "Receba e responda DMs do Instagram diretamente no Beely via Meta Business Suite.",
+    category: "Mensageiros",
+    LogoComponent: LogoInstagram,
+    webhookSlug: "instagram",
+    fields: [
+      { name: "ig_id", label: "Instagram Business Account ID", placeholder: "17841400...", required: true },
+      { name: "token", label: "Page Access Token", placeholder: "EAAB...", required: true },
+    ],
+    guideSteps: [
+      "Certifique-se que seu Instagram está no modo Conta Profissional (Empresa).",
+      "Conecte a conta do Instagram à sua Página do Facebook em Configurações > Instagram.",
+      "Acesse business.facebook.com e crie um App do tipo Business.",
+      "Adicione o produto 'Instagram Graph API' no seu App.",
+      "Em Instagram > Configuração Básica, copie o Instagram Business Account ID.",
+      "Em Ferramentas > Explorador de API do Graph, gere um Page Access Token com permissões: instagram_basic, instagram_manage_messages, pages_manage_metadata.",
+      "Cole o ID e o Token abaixo. O Webhook receberá as mensagens automaticamente.",
+    ],
+    guideLink: "https://business.facebook.com",
+    guideLinkLabel: "Abrir Meta Business Suite",
+  },
+  {
+    id: "messenger",
+    name: "Messenger (Facebook)",
+    description: "Receba e responda mensagens do Messenger da sua Página do Facebook no Beely.",
+    category: "Mensageiros",
+    LogoComponent: LogoMessenger,
+    webhookSlug: "messenger",
+    fields: [
+      { name: "page_id", label: "Facebook Page ID", placeholder: "1029...", required: true },
+      { name: "token", label: "Page Access Token", placeholder: "EAAB...", required: true },
+    ],
+    guideSteps: [
+      "Acesse business.facebook.com e selecione sua Página.",
+      "Vá em Configurações da Página > Mensagens e ative 'Permitir que pessoas enviem mensagens privadas'.",
+      "Crie um App do tipo Business em business.facebook.com/apps.",
+      "No App, adicione o produto 'Messenger'.",
+      "Em Messenger > Configurações de Acesso, selecione a Página e gere um Page Access Token.",
+      "Em Messenger > Webhooks, insira a URL do Webhook abaixo e o token de verificação 'beely2024'.",
+      "Assine os eventos: messages, messaging_postbacks.",
+    ],
+    guideLink: "https://business.facebook.com",
+    guideLinkLabel: "Abrir Meta Business Suite",
+  },
+  {
+    id: "telegram",
+    name: "Telegram",
+    description: "Bot do Telegram para atendimento e notificações.",
+    category: "Mensageiros",
+    LogoComponent: LogoTelegram,
+    fields: [
+      { name: "bot_token", label: "Bot Token", placeholder: "123456:ABC...", required: true },
+    ],
+    guideSteps: [
+      "Abra o Telegram e procure por @BotFather.",
+      "Envie /newbot e siga as instruções para criar seu bot.",
+      "Copie o token gerado (formato: 123456:ABC-DEF...).",
+      "Cole o token abaixo para ativar a integração.",
+    ],
+  },
+  { id: "tiktok", name: "TikTok", description: "Receba mensagens de leads vindos do TikTok.", category: "Mensageiros", LogoComponent: LogoTikTok,
+    guideSteps: ["Integração via TikTok Ads Manager. Configure o webhook nas campanhas de lead generation do TikTok.", "Copie a URL do Webhook abaixo e cole no painel de configuração do TikTok Ads."],
+    webhookSlug: "tiktok", fields: [] },
 
   // E-commerce & Pagamentos
   { id: "hotmart",    name: "Hotmart", description: "Crie leads automaticamente a cada venda no Hotmart.", category: "E-commerce & Pagamentos", LogoComponent: LogoHotmart, webhookSlug: "hotmart",
-    fields: [{ name: "secret", label: "Webhook Secret", placeholder: "hmac-secret" }] },
+    fields: [{ name: "secret", label: "Webhook Secret", placeholder: "hmac-secret", required: true }],
+    guideSteps: ["Na Hotmart, acesse Ferramentas > Webhooks.", "Crie um novo webhook apontando para a URL abaixo.", "Copie o Secret gerado e cole no campo acima.", "Selecione os eventos: purchase.complete, purchase.canceled."] },
   { id: "kiwify",     name: "Kiwify", description: "Sincronize compradores da Kiwify como contatos.", category: "E-commerce & Pagamentos", LogoComponent: LogoKiwify,
-    fields: [{ name: "token", label: "API Token", placeholder: "kwf_..." }] },
+    fields: [{ name: "token", label: "API Token", placeholder: "kwf_...", required: true }] },
   { id: "eduzz",      name: "Eduzz", description: "Importe clientes e produtos da Eduzz.", category: "E-commerce & Pagamentos", LogoComponent: LogoEduzz,
-    fields: [{ name: "api_key", label: "API Key", placeholder: "edz_..." }] },
+    fields: [{ name: "api_key", label: "API Key", placeholder: "edz_...", required: true }] },
   { id: "stripe",     name: "Stripe", description: "Acompanhe pagamentos e assine planos via Stripe.", category: "E-commerce & Pagamentos", LogoComponent: LogoStripe,
-    fields: [{ name: "secret", label: "Secret Key", placeholder: "sk_live_..." }] },
+    fields: [{ name: "secret", label: "Secret Key", placeholder: "sk_live_...", required: true }] },
   { id: "mercadopago",name: "Mercado Pago", description: "Receba notificações de pagamentos Pix e cartão.", category: "E-commerce & Pagamentos", LogoComponent: LogoMercadoPago,
-    fields: [{ name: "access_token", label: "Access Token", placeholder: "APP_USR-..." }] },
+    fields: [{ name: "access_token", label: "Access Token", placeholder: "APP_USR-...", required: true }] },
   { id: "shopify",    name: "Shopify", description: "Sincronize pedidos e clientes da sua loja Shopify.", category: "E-commerce & Pagamentos", LogoComponent: LogoShopify, webhookSlug: "shopify",
-    fields: [{ name: "shop", label: "Shop URL", placeholder: "minhaloja.myshopify.com" }, { name: "token", label: "Admin API Token", placeholder: "shpat_..." }] },
+    fields: [{ name: "shop", label: "Shop URL", placeholder: "minhaloja.myshopify.com", required: true }, { name: "token", label: "Admin API Token", placeholder: "shpat_...", required: true }] },
   { id: "paypal",     name: "PayPal", description: "Receba confirmações de pagamentos PayPal como eventos.", category: "E-commerce & Pagamentos", LogoComponent: LogoPaypal, webhookSlug: "paypal",
-    fields: [{ name: "client_id", label: "Client ID", placeholder: "AaBb..." }, { name: "secret", label: "Secret", placeholder: "..." }] },
+    fields: [{ name: "client_id", label: "Client ID", placeholder: "AaBb...", required: true }, { name: "secret", label: "Secret", placeholder: "...", required: true }] },
   { id: "asaas",      name: "ASAAS", description: "Gestão de cobranças e assinaturas com ASAAS.", category: "E-commerce & Pagamentos", LogoComponent: LogoAsaas,
-    fields: [{ name: "api_key", label: "API Key", placeholder: "$aact_..." }] },
+    fields: [{ name: "api_key", label: "API Key", placeholder: "$aact_...", required: true }] },
 
   // Formulários & Captação
   { id: "typeform",   name: "Typeform", description: "Converta respostas de formulários em leads automaticamente.", category: "Formulários & Captação", LogoComponent: LogoTypeform, webhookSlug: "typeform",
-    fields: [{ name: "token", label: "Personal Token", placeholder: "tfp_..." }] },
+    fields: [{ name: "token", label: "Personal Token", placeholder: "tfp_...", required: true }] },
   { id: "jotform",    name: "Jotform", description: "Capture leads de formulários Jotform.", category: "Formulários & Captação", LogoComponent: LogoJotform,
-    fields: [{ name: "api_key", label: "API Key", placeholder: "..." }] },
+    fields: [{ name: "api_key", label: "API Key", placeholder: "...", required: true }] },
   { id: "rdstation",  name: "RD Station", description: "Sincronize leads e estágios com o RD Station Marketing.", category: "Formulários & Captação", LogoComponent: LogoRDStation,
-    fields: [{ name: "token", label: "API Token", placeholder: "rds_..." }] },
+    fields: [{ name: "token", label: "API Token", placeholder: "rds_...", required: true }] },
   { id: "wordpress",  name: "WordPress", description: "Capture leads de formulários Contact Form 7 e WPForms.", category: "Formulários & Captação", LogoComponent: LogoWordPress, webhookSlug: "wordpress",
+    guideSteps: ["Instale o plugin 'WP Webhooks' no seu WordPress.", "Crie uma ação de envio de webhook apontando para a URL abaixo.", "Nenhuma API key necessária — a URL do webhook é suficiente."],
     fields: [] },
 
   // Automação & Fluxo
-  { id: "make",    name: "Make (Integromat)", description: "Conecte o Beely a qualquer app via Make.", category: "Automação & Fluxo", LogoComponent: LogoMake, webhookSlug: "make", fields: [] },
-  { id: "zapier",  name: "Zapier", description: "Automatize tarefas com mais de 5.000 apps no Zapier.", category: "Automação & Fluxo", LogoComponent: LogoZapier, webhookSlug: "zapier", fields: [] },
-  { id: "n8n",     name: "N8N", description: "Fluxos avançados de automação self-hosted com N8N.", category: "Automação & Fluxo", LogoComponent: LogoN8N, webhookSlug: "n8n", fields: [] },
+  { id: "make",    name: "Make (Integromat)", description: "Conecte o Beely a qualquer app via Make.", category: "Automação & Fluxo", LogoComponent: LogoMake, webhookSlug: "make",
+    guideSteps: ["No Make, crie um novo Scenario.", "Adicione o módulo 'Webhooks > Custom webhook'.", "Copie a URL gerada pelo Make e cole nas configurações da integração de origem.", "Use a URL do Beely abaixo para enviar dados ao Beely."],
+    fields: [] },
+  { id: "zapier",  name: "Zapier", description: "Automatize tarefas com mais de 5.000 apps no Zapier.", category: "Automação & Fluxo", LogoComponent: LogoZapier, webhookSlug: "zapier",
+    guideSteps: ["No Zapier, crie um novo Zap.", "Use 'Webhooks by Zapier' como Trigger.", "Cole a URL do Webhook do Beely abaixo como destino de um Action."],
+    fields: [] },
+  { id: "n8n",     name: "N8N", description: "Fluxos avançados de automação self-hosted com N8N.", category: "Automação & Fluxo", LogoComponent: LogoN8N, webhookSlug: "n8n",
+    guideSteps: ["No N8N, crie um novo Workflow.", "Adicione o nó 'Webhook' como trigger.", "Configure um nó HTTP Request apontando para a URL do Beely abaixo."],
+    fields: [] },
   { id: "twilio",  name: "Twilio", description: "Envie SMS e faça ligações automatizadas via Twilio.", category: "Automação & Fluxo", LogoComponent: LogoTwilio,
-    fields: [{ name: "account_sid", label: "Account SID", placeholder: "AC..." }, { name: "auth_token", label: "Auth Token", placeholder: "..." }] },
+    fields: [{ name: "account_sid", label: "Account SID", placeholder: "AC...", required: true }, { name: "auth_token", label: "Auth Token", placeholder: "...", required: true }] },
 
   // Agenda & Reuniões
   { id: "google_cal", name: "Google Agenda", description: "Sincronize atividades e reuniões com o Google Calendar.", category: "Agenda & Reuniões", LogoComponent: LogoGoogleCalendar,
-    fields: [{ name: "oauth", label: "OAuth Client ID", placeholder: "xxx.apps.googleusercontent.com" }] },
+    fields: [{ name: "oauth", label: "OAuth Client ID", placeholder: "xxx.apps.googleusercontent.com", required: true }] },
   { id: "calendly",   name: "Calendly", description: "Crie atividades quando um agendamento Calendly é confirmado.", category: "Agenda & Reuniões", LogoComponent: LogoCalendly,
-    fields: [{ name: "token", label: "Personal Token", placeholder: "eyJ..." }] },
+    fields: [{ name: "token", label: "Personal Token", placeholder: "eyJ...", required: true }] },
   { id: "zoom",       name: "Zoom", description: "Registre reuniões Zoom e links direto no negócio.", category: "Agenda & Reuniões", LogoComponent: LogoZoom,
-    fields: [{ name: "api_key", label: "API Key", placeholder: "..." }, { name: "api_secret", label: "API Secret", placeholder: "..." }] },
+    fields: [{ name: "api_key", label: "API Key", placeholder: "...", required: true }, { name: "api_secret", label: "API Secret", placeholder: "...", required: true }] },
 
   // E-mail Marketing
   { id: "mailchimp",       name: "Mailchimp", description: "Adicione contatos a listas e dispare campanhas de e-mail.", category: "E-mail Marketing", LogoComponent: LogoMailchimp,
-    fields: [{ name: "api_key", label: "API Key", placeholder: "abc123-us1" }] },
+    fields: [{ name: "api_key", label: "API Key", placeholder: "abc123-us1", required: true }] },
   { id: "activecampaign", name: "ActiveCampaign", description: "Automação de e-mail e CRM com ActiveCampaign.", category: "E-mail Marketing", LogoComponent: LogoActiveCampaign,
-    fields: [{ name: "api_url", label: "Account URL", placeholder: "https://conta.api-us1.com" }, { name: "api_key", label: "API Key", placeholder: "..." }] },
+    fields: [{ name: "api_url", label: "Account URL", placeholder: "https://conta.api-us1.com", required: true }, { name: "api_key", label: "API Key", placeholder: "...", required: true }] },
   { id: "hubspot",         name: "HubSpot", description: "Sincronize contatos e negócios com o HubSpot CRM.", category: "E-mail Marketing", LogoComponent: LogoHubspot, webhookSlug: "hubspot",
-    fields: [{ name: "token", label: "Private App Token", placeholder: "pat-na1-..." }] },
+    fields: [{ name: "token", label: "Private App Token", placeholder: "pat-na1-...", required: true }] },
 
   // Análise & Dados
   { id: "gsheets", name: "Google Sheets", description: "Exporte contatos e negócios para planilhas automaticamente.", category: "Análise & Dados", LogoComponent: LogoGoogleSheets,
-    fields: [{ name: "sheet_id", label: "Spreadsheet ID", placeholder: "1BxiMVs..." }] },
+    fields: [{ name: "sheet_id", label: "Spreadsheet ID", placeholder: "1BxiMVs...", required: true }] },
   { id: "ga4",     name: "Google Analytics 4", description: "Envie eventos de conversão para o GA4.", category: "Análise & Dados", LogoComponent: LogoGA4,
-    fields: [{ name: "measurement_id", label: "Measurement ID", placeholder: "G-XXXXXX" }, { name: "api_secret", label: "API Secret", placeholder: "..." }] },
+    fields: [{ name: "measurement_id", label: "Measurement ID", placeholder: "G-XXXXXX", required: true }, { name: "api_secret", label: "API Secret", placeholder: "...", required: true }] },
 ];
 
 const CATEGORIES = [...new Set(INTEGRATIONS.map((i) => i.category))];
 
 /* ── Modal de configuração ─────────────────────────────────── */
-function ConfigModal({ integration, onClose }: { integration: IntegrationDef; onClose: () => void }) {
-  const appUrl = typeof window !== "undefined" ? window.location.origin : "https://app.beely.com.br";
+function ConfigModal({
+  integration,
+  existingCredentials,
+  onSave,
+  onDisconnect,
+  onClose,
+}: {
+  integration: IntegrationDef;
+  existingCredentials?: Record<string, string>;
+  onSave: (credentials: Record<string, string>) => void;
+  onDisconnect: () => void;
+  onClose: () => void;
+}) {
+  const appUrl = typeof window !== "undefined" ? window.location.origin : "https://beelycrm.onrender.com";
   const { LogoComponent } = integration;
+  const isConnected = !!existingCredentials;
+
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    if (existingCredentials) return { ...existingCredentials };
+    return {};
+  });
+  const [errors, setErrors] = useState<Record<string, boolean>>({});
+  const [showGuide, setShowGuide] = useState(!isConnected && !!integration.guideSteps);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const requiredFields = (integration.fields ?? []).filter((f) => f.required);
+    const newErrors: Record<string, boolean> = {};
+    for (const f of requiredFields) {
+      if (!values[f.name]?.trim()) newErrors[f.name] = true;
+    }
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+    onSave(values);
+  }
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <LogoComponent className="size-8 shrink-0" />
-            Conectar {integration.name}
+            {isConnected ? "Gerenciar" : "Conectar"} {integration.name}
           </DialogTitle>
           <DialogDescription>{integration.description}</DialogDescription>
         </DialogHeader>
 
-        <form
-          className="space-y-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            toast.success(`${integration.name} conectado com sucesso!`);
-            onClose();
-          }}
-        >
-          {integration.fields && integration.fields.length > 0 && integration.fields.map((f) => (
-            <div key={f.name} className="space-y-1.5">
-              <Label>{f.label}</Label>
-              <Input name={f.name} placeholder={f.placeholder} />
-            </div>
-          ))}
+        {/* Guia passo a passo */}
+        {integration.guideSteps && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowGuide((v) => !v)}
+              className="flex items-center gap-2 text-xs text-primary hover:underline mb-2"
+            >
+              <Info className="size-3.5" />
+              {showGuide ? "Ocultar guia de configuração" : "Ver guia de configuração"}
+            </button>
+            {showGuide && (
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-2 mb-2">
+                <p className="text-xs font-semibold text-primary uppercase tracking-wide mb-1">Como configurar</p>
+                <ol className="space-y-1.5">
+                  {integration.guideSteps.map((step, i) => (
+                    <li key={i} className="flex gap-2 text-xs text-muted-foreground">
+                      <span className="size-4 shrink-0 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold mt-0.5">{i + 1}</span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+                {integration.guideLink && (
+                  <a
+                    href={integration.guideLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-primary font-medium mt-2 hover:underline"
+                  >
+                    <ExternalLink className="size-3" />
+                    {integration.guideLinkLabel ?? integration.guideLink}
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          {/* Campos de credenciais */}
+          {integration.fields && integration.fields.length > 0 && (
+            <div className="space-y-3">
+              {integration.fields.map((f) => (
+                <div key={f.name} className="space-y-1.5">
+                  <Label className="flex items-center gap-1">
+                    {f.label}
+                    {f.required && <span className="text-destructive">*</span>}
+                  </Label>
+                  <Input
+                    name={f.name}
+                    placeholder={f.placeholder}
+                    value={values[f.name] ?? ""}
+                    onChange={(e) => {
+                      setValues((v) => ({ ...v, [f.name]: e.target.value }));
+                      setErrors((v) => ({ ...v, [f.name]: false }));
+                    }}
+                    className={cn(errors[f.name] && "border-destructive focus-visible:ring-destructive")}
+                  />
+                  {errors[f.name] && (
+                    <p className="flex items-center gap-1 text-xs text-destructive">
+                      <AlertCircle className="size-3" /> Campo obrigatório
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* URL do Webhook */}
           {integration.webhookSlug && (
             <div className="space-y-1.5">
               <Label>URL do Webhook (cole no painel do provedor)</Label>
@@ -428,11 +613,30 @@ function ConfigModal({ integration, onClose }: { integration: IntegrationDef; on
             </div>
           )}
 
+          {/* Sem campos e sem webhook */}
           {(!integration.fields || integration.fields.length === 0) && !integration.webhookSlug && (
             <p className="text-sm text-muted-foreground">Esta integração é configurada via OAuth. Clique em conectar para autorizar.</p>
           )}
 
-          <Button type="submit" className="w-full">Conectar</Button>
+          {/* Ações */}
+          <div className="flex gap-2 pt-1">
+            {isConnected && (
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => {
+                  onDisconnect();
+                }}
+              >
+                <Trash2 className="size-3.5" /> Desconectar
+              </Button>
+            )}
+            <Button type="submit" className="flex-1">
+              {isConnected ? "Salvar alterações" : "Conectar"}
+            </Button>
+          </div>
         </form>
       </DialogContent>
     </Dialog>
@@ -485,8 +689,12 @@ function IntegrationCard({
 
 /* ── View principal ────────────────────────────────────────── */
 export function IntegrationsView() {
+  const hydrated = useHydrated();
+  const integrations = useStore((s) => s.integrations);
+  const saveIntegration = useStore((s) => s.saveIntegration);
+  const removeIntegration = useStore((s) => s.removeIntegration);
+
   const [activeCategory, setActiveCategory] = useState("Todos");
-  const [connected, setConnected] = useState<Set<string>>(new Set(["google_cal"]));
   const [configuring, setConfiguring] = useState<IntegrationDef | null>(null);
 
   const filtered = activeCategory === "Todos"
@@ -498,33 +706,52 @@ export function IntegrationsView() {
     if (integration) setConfiguring(integration);
   }
 
-  function handleSave() {
-    if (configuring) {
-      setConnected((prev) => new Set([...prev, configuring.id]));
-    }
+  function handleSave(credentials: Record<string, string>) {
+    if (!configuring) return;
+    saveIntegration(configuring.id, credentials);
+    toast.success(`${configuring.name} conectado com sucesso!`);
     setConfiguring(null);
   }
 
+  function handleDisconnect() {
+    if (!configuring) return;
+    removeIntegration(configuring.id);
+    toast.success(`${configuring.name} desconectado.`);
+    setConfiguring(null);
+  }
+
+  if (!hydrated) return null;
+
+  const connectedCount = Object.keys(integrations).length;
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap gap-2">
-        {["Todos", ...CATEGORIES].map((cat) => (
-          <button
-            key={cat}
-            onClick={() => setActiveCategory(cat)}
-            className={cn(
-              "rounded-full border px-4 py-1.5 text-xs font-medium transition-all",
-              activeCategory === cat
-                ? "border-primary bg-primary/15 text-primary"
-                : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
-            )}
-          >
-            {cat}
-            {cat === "Todos" && (
-              <span className="ml-1.5 text-[10px] opacity-60">{INTEGRATIONS.length}</span>
-            )}
-          </button>
-        ))}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
+          {["Todos", ...CATEGORIES].map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setActiveCategory(cat)}
+              className={cn(
+                "rounded-full border px-4 py-1.5 text-xs font-medium transition-all",
+                activeCategory === cat
+                  ? "border-primary bg-primary/15 text-primary"
+                  : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
+              )}
+            >
+              {cat}
+              {cat === "Todos" && (
+                <span className="ml-1.5 text-[10px] opacity-60">{INTEGRATIONS.length}</span>
+              )}
+            </button>
+          ))}
+        </div>
+        {connectedCount > 0 && (
+          <span className="text-xs text-muted-foreground">
+            <CheckCircle2 className="inline size-3 text-primary mr-1" />
+            {connectedCount} {connectedCount === 1 ? "integração ativa" : "integrações ativas"}
+          </span>
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -532,13 +759,21 @@ export function IntegrationsView() {
           <IntegrationCard
             key={integration.id}
             integration={integration}
-            connected={connected.has(integration.id)}
+            connected={!!integrations[integration.id]}
             onConnect={handleConnect}
           />
         ))}
       </div>
 
-      {configuring && <ConfigModal integration={configuring} onClose={handleSave} />}
+      {configuring && (
+        <ConfigModal
+          integration={configuring}
+          existingCredentials={integrations[configuring.id]?.credentials}
+          onSave={handleSave}
+          onDisconnect={handleDisconnect}
+          onClose={() => setConfiguring(null)}
+        />
+      )}
     </div>
   );
 }

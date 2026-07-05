@@ -175,6 +175,12 @@ export interface ConnectedChannel {
   credentials: Record<string, string>;
 }
 
+export interface SavedIntegration {
+  id: string;
+  connectedAt: string;
+  credentials: Record<string, string>;
+}
+
 interface StoreState {
   pipelines: Pipeline[];
   deals: Deal[];
@@ -185,6 +191,7 @@ interface StoreState {
   scoringRules: ScoringRule[];
   connectedChannels: ConnectedChannel[];
   financialConfig: FinancialConfig;
+  integrations: Record<string, SavedIntegration>;
 
   // pipelines & stages
   addPipeline: (name: string) => string;
@@ -231,6 +238,9 @@ interface StoreState {
 
   connectChannel: (ch: ConnectedChannel) => void;
   disconnectChannel: (type: ChannelType) => void;
+
+  saveIntegration: (id: string, credentials: Record<string, string>) => void;
+  removeIntegration: (id: string) => void;
 }
 
 const SEED_PIPELINE_ID = "pipe-vendas";
@@ -275,7 +285,7 @@ function seed() {
     revenueGoalMonthly: 0,
     leadsPerMonth: 0,
   };
-  return { pipelines, deals, contacts: [...CONTACTS], activities: [...ACTIVITIES], companies, automations, scoringRules, connectedChannels: [], financialConfig };
+  return { pipelines, deals, contacts: [...CONTACTS], activities: [...ACTIVITIES], companies, automations, scoringRules, connectedChannels: [], financialConfig, integrations: {} };
 }
 
 const uid = () =>
@@ -527,13 +537,38 @@ export const useStore = create<StoreState>()(
         })),
       disconnectChannel: (type) =>
         set((s) => ({ connectedChannels: s.connectedChannels.filter((c) => c.type !== type) })),
+
+      saveIntegration: (id, credentials) =>
+        set((s) => ({
+          integrations: {
+            ...s.integrations,
+            [id]: { id, credentials, connectedAt: new Date().toISOString() },
+          },
+        })),
+      removeIntegration: (id) =>
+        set((s) => {
+          const next = { ...s.integrations };
+          delete next[id];
+          return { integrations: next };
+        }),
     }),
     {
       name: "beely-store",
-      version: 5,
+      version: 6,
       skipHydration: true,
       migrate: (_persisted: unknown, fromVersion) => {
         if (fromVersion < 4) return seed() as unknown as StoreState;
+        if (fromVersion < 6) {
+          const base = seed();
+          const prev = (_persisted ?? {}) as Partial<StoreState>;
+          return {
+            ...base,
+            ...prev,
+            connectedChannels: prev.connectedChannels ?? [],
+            financialConfig: { ...base.financialConfig, ...(prev.financialConfig ?? {}) },
+            integrations: prev.integrations ?? {},
+          } as StoreState;
+        }
         const base = seed();
         const prev = (_persisted ?? {}) as Partial<StoreState>;
         return {
@@ -541,6 +576,7 @@ export const useStore = create<StoreState>()(
           ...prev,
           connectedChannels: prev.connectedChannels ?? [],
           financialConfig: { ...base.financialConfig, ...(prev.financialConfig ?? {}) },
+          integrations: prev.integrations ?? {},
         } as StoreState;
       },
     }
