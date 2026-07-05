@@ -66,9 +66,9 @@ export async function POST(request: Request, ctx: Ctx) {
   try { payload = JSON.parse(rawBody); } catch { payload = {}; }
 
   try {
-    if (provider === "whatsapp")  handleWhatsApp(payload);
-    if (provider === "instagram") handleInstagram(payload);
-    if (provider === "messenger") handleMessenger(payload);
+    if (provider === "whatsapp")  await handleWhatsApp(payload);
+    if (provider === "instagram") await handleInstagram(payload);
+    if (provider === "messenger") await handleMessenger(payload);
   } catch (err) {
     console.error(`[webhook:${provider}] erro no handler`, err);
   }
@@ -112,7 +112,7 @@ interface MetaTextMessage {
 
 /* ── WhatsApp — suporta Z-API e Meta Cloud API ──────────────── */
 
-function handleWhatsApp(payload: unknown) {
+async function handleWhatsApp(payload: unknown) {
   const p = payload as ZApiMessage & {
     object?: string;
     entry?: { changes?: { value?: { messages?: MetaTextMessage[]; contacts?: { profile?: { name?: string } }[] } }[] }[];
@@ -137,7 +137,7 @@ function handleWhatsApp(payload: unknown) {
 
     console.log(`[WhatsApp/Z-API] de ${name} (${phone}): ${text}`);
 
-    pushMessage({
+    await pushMessage({
       channel:   "whatsapp",
       from:      phone,
       fromName:  name,
@@ -156,7 +156,7 @@ function handleWhatsApp(payload: unknown) {
     const text  = p.value.text?.message ?? "(mensagem)";
     const ts    = p.value.momment ?? Date.now();
 
-    pushMessage({
+    await pushMessage({
       channel:   "whatsapp",
       from:      phone,
       fromName:  name,
@@ -176,7 +176,7 @@ function handleWhatsApp(payload: unknown) {
         for (const msg of messages) {
           const text = msg.text?.body ?? "(mensagem)";
           const name = value.contacts?.[0]?.profile?.name ?? msg.from;
-          pushMessage({
+          await pushMessage({
             channel:   "whatsapp",
             from:      msg.from,
             fromName:  name,
@@ -192,7 +192,7 @@ function handleWhatsApp(payload: unknown) {
 
 /* ── Instagram Graph API ────────────────────────────────────── */
 
-function handleInstagram(payload: unknown) {
+async function handleInstagram(payload: unknown) {
   const p = payload as {
     object?: string;
     entry?: {
@@ -212,7 +212,7 @@ function handleInstagram(payload: unknown) {
       const from = ev.sender?.id ?? "desconhecido";
       const text = ev.message?.text ?? "(mensagem)";
       const ts   = ev.timestamp ?? Date.now();
-      pushMessage({
+      await pushMessage({
         channel:   "instagram",
         from,
         fromName:  `IG:${from}`,
@@ -226,7 +226,7 @@ function handleInstagram(payload: unknown) {
 
 /* ── Messenger (Facebook) ───────────────────────────────────── */
 
-function handleMessenger(payload: unknown) {
+async function handleMessenger(payload: unknown) {
   const p = payload as {
     object?: string;
     entry?: {
@@ -246,7 +246,7 @@ function handleMessenger(payload: unknown) {
       const from = ev.sender?.id ?? "desconhecido";
       const text = ev.message?.text ?? "(mensagem)";
       const ts   = ev.timestamp ?? Date.now();
-      pushMessage({
+      await pushMessage({
         channel:   "messenger",
         from,
         fromName:  `FB:${from}`,
