@@ -14,6 +14,7 @@ export interface InboxMessage {
   text: string;
   timestamp: number;
   fromMe?: boolean;
+  senderPhoto?: string;
   msgType?: "text" | "image" | "audio" | "document" | "video";
   mediaUrl?: string;
   mediaCaption?: string;
@@ -33,6 +34,25 @@ let memCache: InboxMessage[] = [];
 let cacheLoadedAt = 0;
 const CACHE_TTL = 5_000; // 5s
 
+// Garante que colunas extras existam (roda uma vez por instância)
+let schemaMigrated = false;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function ensureSchema(client: any) {
+  if (schemaMigrated) return;
+  schemaMigrated = true;
+  const cols = [
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS sender_photo TEXT",
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS from_me BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS msg_type TEXT DEFAULT 'text'",
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS media_url TEXT",
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS media_caption TEXT",
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS file_name TEXT",
+  ];
+  for (const sql of cols) {
+    await client.rpc("exec_sql", { sql }).catch(() => null);
+  }
+}
+
 export async function pushMessage(msg: Omit<InboxMessage, "id">): Promise<InboxMessage> {
   const full: InboxMessage = {
     ...msg,
@@ -46,6 +66,7 @@ export async function pushMessage(msg: Omit<InboxMessage, "id">): Promise<InboxM
 
   const client = getClient();
   if (client) {
+    void ensureSchema(client);
     const { error } = await client.from("inbox_messages").insert({
       id:            full.id,
       channel:       full.channel,
@@ -54,6 +75,7 @@ export async function pushMessage(msg: Omit<InboxMessage, "id">): Promise<InboxM
       text:          full.text,
       timestamp:     full.timestamp,
       from_me:       full.fromMe ?? false,
+      sender_photo:  full.senderPhoto ?? null,
       msg_type:      full.msgType ?? "text",
       media_url:     full.mediaUrl ?? null,
       media_caption: full.mediaCaption ?? null,
@@ -89,7 +111,7 @@ export async function getRecentMessages(since?: number): Promise<InboxMessage[]>
   try {
     let query = client
       .from("inbox_messages")
-      .select("id, channel, from, from_name, text, timestamp, from_me, msg_type, media_url, media_caption, file_name")
+      .select("id, channel, from, from_name, text, timestamp, from_me, sender_photo, msg_type, media_url, media_caption, file_name")
       .order("timestamp", { ascending: false })
       .limit(200);
 
@@ -109,6 +131,7 @@ export async function getRecentMessages(since?: number): Promise<InboxMessage[]>
       text:         r.text ?? "",
       timestamp:    Number(r.timestamp),
       fromMe:       r.from_me ?? false,
+      senderPhoto:  r.sender_photo ?? undefined,
       msgType:      r.msg_type ?? "text",
       mediaUrl:     r.media_url ?? undefined,
       mediaCaption: r.media_caption ?? undefined,

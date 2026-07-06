@@ -161,6 +161,7 @@ async function handleWhatsApp(payload: unknown) {
       text = "[Sticker]";
     }
 
+    const senderPhoto = p.senderPhoto ?? undefined;
     console.log(`[WhatsApp/Z-API] ${fromMe ? "→ enviado" : "← recebido"} ${name} (${phone}): ${text}`);
 
     await pushMessage({
@@ -170,6 +171,7 @@ async function handleWhatsApp(payload: unknown) {
       text,
       timestamp:    typeof ts === "number" && ts > 1e12 ? ts : ts * 1000,
       fromMe,
+      senderPhoto,
       msgType,
       mediaUrl,
       mediaCaption,

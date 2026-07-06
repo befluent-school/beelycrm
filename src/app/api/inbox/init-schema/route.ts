@@ -1,0 +1,49 @@
+import { NextResponse } from "next/server";
+
+/**
+ * GET /api/inbox/init-schema
+ * Adiciona colunas faltantes à tabela inbox_messages via pg REST.
+ * Acesse uma vez após o deploy para garantir o schema atualizado.
+ */
+export async function GET() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    return NextResponse.json({ ok: false, reason: "no_supabase_config" });
+  }
+
+  const sqls = [
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS sender_photo TEXT",
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS from_me BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS msg_type TEXT DEFAULT 'text'",
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS media_url TEXT",
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS media_caption TEXT",
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS file_name TEXT",
+  ];
+
+  const results: { sql: string; ok: boolean; error?: string }[] = [];
+
+  for (const sql of sqls) {
+    try {
+      const res = await fetch(`${url}/rest/v1/rpc/exec_sql`, {
+        method:  "POST",
+        headers: {
+          "Content-Type":  "application/json",
+          "apikey":        key,
+          "Authorization": `Bearer ${key}`,
+        },
+        body: JSON.stringify({ sql }),
+      });
+      if (res.ok) {
+        results.push({ sql: sql.slice(0, 60), ok: true });
+      } else {
+        const err = await res.text();
+        results.push({ sql: sql.slice(0, 60), ok: false, error: err.slice(0, 100) });
+      }
+    } catch (e) {
+      results.push({ sql: sql.slice(0, 60), ok: false, error: String(e).slice(0, 100) });
+    }
+  }
+
+  return NextResponse.json({ ok: true, results });
+}

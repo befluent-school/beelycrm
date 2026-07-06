@@ -115,6 +115,7 @@ interface LocalConv {
   preview: string;
   unread: number;
   time: string;
+  senderPhoto?: string;
 }
 
 type MsgType = "text" | "image" | "audio" | "document" | "video";
@@ -140,6 +141,7 @@ interface PolledMsg {
   text: string;
   timestamp: number;
   fromMe?: boolean;
+  senderPhoto?: string;
   msgType?: MsgType;
   mediaUrl?: string;
   mediaCaption?: string;
@@ -513,6 +515,27 @@ function MessageBubble({ m }: { m: ThreadMsg }) {
   );
 }
 
+/* ── Avatar com foto ou iniciais ────────────────────────────── */
+function ContactAvatar({ name, photo, size = "md" }: { name: string; photo?: string; size?: "sm" | "md" | "lg" }) {
+  const sizeClass = size === "sm" ? "size-8" : size === "lg" ? "size-12" : "size-10";
+  const textClass = size === "sm" ? "text-[10px]" : size === "lg" ? "text-base" : "text-xs";
+  if (photo) {
+    return (
+      <img
+        src={photo}
+        alt={name}
+        className={cn(sizeClass, "shrink-0 rounded-full object-cover")}
+        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+      />
+    );
+  }
+  return (
+    <span className={cn(sizeClass, textClass, "shrink-0 flex items-center justify-center rounded-full bg-primary/20 font-semibold text-primary")}>
+      {initials(name)}
+    </span>
+  );
+}
+
 /* ── Painel de chat ─────────────────────────────────────────── */
 function ChatPanel({ conv, thread, onSend, showAi, onToggleAi, externalDraft, onDraftChange }: {
   conv: LocalConv;
@@ -559,8 +582,8 @@ function ChatPanel({ conv, thread, onSend, showAi, onToggleAi, externalDraft, on
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
       {/* Header do chat */}
       <div className="flex shrink-0 items-center gap-3 border-b border-border bg-[#111827]/60 px-4 py-3">
-        <span className="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/20 text-sm font-semibold text-primary">
-          {initials(conv.contact)}
+        <span className="relative shrink-0">
+          <ContactAvatar name={conv.contact} photo={conv.senderPhoto} size="md" />
           <span className={cn(
             "absolute -bottom-0.5 -right-0.5 flex size-5 items-center justify-center rounded-full border-2 border-background",
             meta.ringBg
@@ -730,20 +753,28 @@ export function InboxView() {
       const existing = cs.find((c) => c.id === convId);
       if (existing) {
         return cs.map((c) => c.id === convId
-          ? { ...c, preview: previewText({ from: isOut ? "out" : "in", text: msg.text, time, type: msg.msgType }), unread: isOut ? c.unread : c.unread + 1, time }
+          ? {
+              ...c,
+              preview: previewText({ from: isOut ? "out" : "in", text: msg.text, time, type: msg.msgType }),
+              unread:  isOut ? c.unread : c.unread + 1,
+              time,
+              // Atualiza foto se receber uma nova
+              senderPhoto: msg.senderPhoto ?? c.senderPhoto,
+            }
           : c
         );
       }
       // Nova conversa só cria ao receber mensagem (fromMe=false)
       if (isOut) return cs;
       const newConv: LocalConv = {
-        id:      convId,
-        contact: msg.fromName,
-        phone:   msg.from,
-        channel: msg.channel,
-        preview: msg.text,
-        unread:  1,
+        id:          convId,
+        contact:     msg.fromName,
+        phone:       msg.from,
+        channel:     msg.channel,
+        preview:     msg.text,
+        unread:      1,
         time,
+        senderPhoto: msg.senderPhoto,
       };
       registerLeadInFunnel(msg.fromName, msg.channel, msg.text);
       return [newConv, ...cs];
@@ -800,18 +831,33 @@ export function InboxView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, connectedChannels.length]);
 
-  /* Envio de mensagem — adiciona localmente com flag `local: true` */
+  /* Envio de mensagem — adiciona localmente e envia via Z-API + persiste no Supabase */
   function handleSend(convId: string, text: string) {
     const now  = new Date();
     const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 
+    // Adiciona imediatamente na tela (não espera resposta da API)
     const newMsg: ThreadMsg = { from: "out", text, time, type: "text", local: true };
-
     setThreads((t) => ({ ...t, [convId]: [...(t[convId] ?? []), newMsg] }));
     setConvs((cs) => cs.map((c) => c.id === convId ? { ...c, preview: text, time: "agora" } : c));
 
-    // Atualiza deal no CRM
+    // Envia via Z-API + persiste no Supabase em background
     const conv = convs.find((c) => c.id === convId);
+    if (conv?.phone) {
+      fetch("/api/inbox/send", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ phone: conv.phone, text }),
+      }).then((r) => r.json()).then((res) => {
+        if (!res.zapiOk) {
+          console.warn("[inbox] Z-API não enviou (sem credenciais ou erro) — mensagem salva localmente");
+        }
+      }).catch(() => {
+        console.warn("[inbox] Falha ao chamar /api/inbox/send");
+      });
+    }
+
+    // Atualiza deal no CRM
     if (conv) {
       const state = useStore.getState();
       const deal  = state.deals.find((d) => d.contact === conv.contact && d.status === "open");
@@ -933,8 +979,8 @@ export function InboxView() {
                           : "hover:bg-white/[0.03]"
                       )}
                     >
-                      <span className="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
-                        {initials(c.contact)}
+                      <span className="relative shrink-0">
+                        <ContactAvatar name={c.contact} photo={c.senderPhoto} size="md" />
                         <span className={cn(
                           "absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full border-2 border-background",
                           m.ringBg
