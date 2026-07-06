@@ -81,18 +81,19 @@ export async function POST(request: Request, ctx: Ctx) {
 interface ZApiMessage {
   phone?: string;
   fromMe?: boolean;
-  momment?: number;         // timestamp em ms (Z-API v2)
-  timestamp?: number;       // fallback
+  momment?: number;
+  timestamp?: number;
   text?: { message?: string };
-  audio?: { audioUrl?: string };
-  image?: { caption?: string };
-  document?: { fileName?: string };
+  audio?: { audioUrl?: string; mimeType?: string };
+  image?: { imageUrl?: string; caption?: string; mimeType?: string };
+  video?: { videoUrl?: string; caption?: string };
+  document?: { documentUrl?: string; fileName?: string; mimeType?: string };
+  sticker?: { stickerUrl?: string };
   senderName?: string;
   senderPhoto?: string;
   instanceId?: string;
   messageId?: string;
   type?: string;
-  // Z-API também pode enviar dentro de "value" (formato legado)
   value?: {
     phone?: string;
     fromMe?: boolean;
@@ -120,30 +121,60 @@ async function handleWhatsApp(payload: unknown) {
 
   /* Z-API: mensagem recebida diretamente no root do payload */
   if (p.phone && !p.object) {
-    // Ignora mensagens enviadas pelo próprio número
-    if (p.fromMe) return;
+    const phone  = p.phone ?? "desconhecido";
+    const name   = p.senderName ?? phone;
+    const ts     = p.momment ?? p.timestamp ?? Date.now();
+    const fromMe = p.fromMe ?? false;
 
-    const phone = p.phone ?? "desconhecido";
-    const name  = p.senderName ?? phone;
-    const ts    = p.momment ?? p.timestamp ?? Date.now();
+    // Detecta tipo de mídia e extrai dados
+    let msgType: "text" | "image" | "audio" | "document" | "video" = "text";
+    let text = "(mensagem sem texto)";
+    let mediaUrl: string | undefined;
+    let mediaCaption: string | undefined;
+    let fileName: string | undefined;
 
-    // Extrai texto de qualquer tipo de mensagem
-    const text =
-      p.text?.message ||
-      (p.audio ? "[Áudio]" : undefined) ||
-      (p.image ? (p.image.caption ?? "[Imagem]") : undefined) ||
-      (p.document ? `[Documento: ${p.document.fileName ?? "arquivo"}]` : undefined) ||
-      "(mensagem sem texto)";
+    if (p.text?.message) {
+      text = p.text.message;
+      msgType = "text";
+    } else if (p.image) {
+      msgType = "image";
+      mediaUrl = p.image.imageUrl;
+      mediaCaption = p.image.caption;
+      text = p.image.caption ?? "[Imagem]";
+    } else if (p.audio) {
+      msgType = "audio";
+      mediaUrl = p.audio.audioUrl;
+      text = "[Áudio]";
+    } else if (p.video) {
+      msgType = "video";
+      mediaUrl = p.video.videoUrl;
+      mediaCaption = p.video.caption;
+      text = p.video.caption ?? "[Vídeo]";
+    } else if (p.document) {
+      msgType = "document";
+      mediaUrl = p.document.documentUrl;
+      fileName = p.document.fileName;
+      text = `[Documento: ${p.document.fileName ?? "arquivo"}]`;
+    } else if (p.sticker) {
+      msgType = "image";
+      mediaUrl = p.sticker.stickerUrl;
+      text = "[Sticker]";
+    }
 
-    console.log(`[WhatsApp/Z-API] de ${name} (${phone}): ${text}`);
+    console.log(`[WhatsApp/Z-API] ${fromMe ? "→ enviado" : "← recebido"} ${name} (${phone}): ${text}`);
 
     await pushMessage({
-      channel:   "whatsapp",
-      from:      phone,
-      fromName:  name,
+      channel:      "whatsapp",
+      from:         phone,
+      fromName:     name,
       text,
-      timestamp: typeof ts === "number" && ts > 1e12 ? ts : ts * 1000,
-      raw:       payload,
+      timestamp:    typeof ts === "number" && ts > 1e12 ? ts : ts * 1000,
+      fromMe,
+      msgType,
+      mediaUrl,
+      mediaCaption,
+      fileName,
+      raw:          payload,
     });
     return;
   }

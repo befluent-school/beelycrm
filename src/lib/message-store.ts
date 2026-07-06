@@ -13,6 +13,11 @@ export interface InboxMessage {
   fromName: string;
   text: string;
   timestamp: number;
+  fromMe?: boolean;
+  msgType?: "text" | "image" | "audio" | "document" | "video";
+  mediaUrl?: string;
+  mediaCaption?: string;
+  fileName?: string;
   raw?: unknown;
 }
 
@@ -42,12 +47,17 @@ export async function pushMessage(msg: Omit<InboxMessage, "id">): Promise<InboxM
   const client = getClient();
   if (client) {
     const { error } = await client.from("inbox_messages").insert({
-      id:         full.id,
-      channel:    full.channel,
-      from:       full.from,
-      from_name:  full.fromName,
-      text:       full.text,
-      timestamp:  full.timestamp,
+      id:            full.id,
+      channel:       full.channel,
+      from:          full.from,
+      from_name:     full.fromName,
+      text:          full.text,
+      timestamp:     full.timestamp,
+      from_me:       full.fromMe ?? false,
+      msg_type:      full.msgType ?? "text",
+      media_url:     full.mediaUrl ?? null,
+      media_caption: full.mediaCaption ?? null,
+      file_name:     full.fileName ?? null,
     });
     if (error) {
       console.error("[message-store] erro ao salvar no Supabase:", error.message);
@@ -92,12 +102,17 @@ export async function getRecentMessages(since?: number): Promise<InboxMessage[]>
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const msgs: InboxMessage[] = (data ?? []).map((r: any) => ({
-      id:        r.id,
-      channel:   r.channel,
-      from:      r.from,
-      fromName:  r.from_name ?? r.from,
-      text:      r.text ?? "",
-      timestamp: Number(r.timestamp),
+      id:           r.id,
+      channel:      r.channel,
+      from:         r.from,
+      fromName:     r.from_name ?? r.from,
+      text:         r.text ?? "",
+      timestamp:    Number(r.timestamp),
+      fromMe:       r.from_me ?? false,
+      msgType:      r.msg_type ?? "text",
+      mediaUrl:     r.media_url ?? undefined,
+      mediaCaption: r.media_caption ?? undefined,
+      fileName:     r.file_name ?? undefined,
     })).reverse(); // mais antigo primeiro
 
     // Atualiza cache

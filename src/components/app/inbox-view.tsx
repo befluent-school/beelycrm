@@ -114,12 +114,27 @@ interface LocalConv {
   unread: number;
   time: string;
 }
-type Thread = { from: "in" | "out"; text: string; time: string };
+type ThreadMsg = {
+  from: "in" | "out";
+  text: string;
+  time: string;
+  type?: "text" | "image" | "audio" | "document" | "video";
+  mediaUrl?: string;
+  mediaCaption?: string;
+  fileName?: string;
+};
+// Keep backward compat alias
+type Thread = ThreadMsg;
 
 /* ── Polling para mensagens em tempo real (4s) ──────────────── */
-function useInboxPolling(onMessage: (msg: {
-  id: string; channel: Channel; from: string; fromName: string; text: string; timestamp: number;
-}) => void) {
+interface PolledMsg {
+  id: string; channel: Channel; from: string; fromName: string;
+  text: string; timestamp: number; fromMe?: boolean;
+  msgType?: "text" | "image" | "audio" | "document" | "video";
+  mediaUrl?: string; mediaCaption?: string; fileName?: string;
+}
+
+function useInboxPolling(onMessage: (msg: PolledMsg) => void) {
   const lastTs  = useRef(0);
   const seenIds = useRef(new Set<string>());
 
@@ -128,7 +143,7 @@ function useInboxPolling(onMessage: (msg: {
       try {
         const res = await fetch(`/api/inbox/messages?since=${lastTs.current}`);
         if (!res.ok) return;
-        const msgs = await res.json() as { id: string; channel: Channel; from: string; fromName: string; text: string; timestamp: number }[];
+        const msgs = await res.json() as PolledMsg[];
         for (const msg of msgs) {
           if (seenIds.current.has(msg.id)) continue;
           seenIds.current.add(msg.id);
@@ -138,7 +153,7 @@ function useInboxPolling(onMessage: (msg: {
       } catch { /* rede offline, tenta de novo no próximo tick */ }
     }
 
-    poll(); // imediato na montagem
+    poll();
     const interval = setInterval(poll, 4000);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -448,20 +463,93 @@ function ChatPanel({ conv, thread, onSend, showAi, onToggleAi, externalDraft, on
       </div>
 
       {/* Mensagens — área principal que cresce */}
-      <div className="flex-1 overflow-y-auto bg-[radial-gradient(ellipse_at_top,rgba(229,147,19,0.04),transparent_55%)] p-5 space-y-3">
-        {thread.map((m, i) => (
-          <div key={i} className={cn("flex", m.from === "out" ? "justify-end" : "justify-start")}>
-            <div className={cn(
-              "max-w-[72%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm",
-              m.from === "out"
-                ? "bg-primary text-primary-foreground rounded-br-sm"
-                : "bg-card rounded-bl-sm"
-            )}>
-              <p className="leading-relaxed">{m.text}</p>
-              <p className={cn("mt-1 text-[10px]", m.from === "out" ? "text-primary-foreground/70" : "text-muted-foreground")}>{m.time}</p>
+      <div className="flex-1 overflow-y-auto bg-[radial-gradient(ellipse_at_top,rgba(229,147,19,0.04),transparent_55%)] p-5 space-y-1.5">
+        {thread.map((m, i) => {
+          const isOut = m.from === "out";
+          const bubbleBg = isOut ? "bg-[#005c4b] text-white" : "bg-[#202c33] text-white";
+          const timeColor = isOut ? "text-white/60" : "text-white/50";
+          const msgType = m.type ?? (
+            m.text.startsWith("[Áudio]") ? "audio" :
+            m.text.startsWith("[Imagem]") ? "image" :
+            m.text.startsWith("[Documento:") ? "document" :
+            m.text.startsWith("[Vídeo]") ? "video" : "text"
+          );
+
+          return (
+            <div key={i} className={cn("flex", isOut ? "justify-end" : "justify-start")}>
+              <div className={cn("max-w-[72%] min-w-[80px] rounded-xl shadow-sm overflow-hidden", bubbleBg)}>
+                {/* Imagem */}
+                {msgType === "image" && m.mediaUrl && (
+                  <img
+                    src={m.mediaUrl}
+                    alt={m.mediaCaption ?? "imagem"}
+                    className="w-full max-w-[280px] block object-cover rounded-t-xl"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                )}
+                {msgType === "image" && !m.mediaUrl && (
+                  <div className="flex items-center gap-2 px-3.5 pt-2.5 pb-1 opacity-70">
+                    <svg className="size-5 shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                    <span className="text-sm italic">{m.text}</span>
+                  </div>
+                )}
+                {/* Áudio */}
+                {msgType === "audio" && (
+                  <div className="flex items-center gap-2.5 px-3.5 py-2.5">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/20">
+                      <svg className="size-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zm-1 14.93V21h2v-3.07A7.003 7.003 0 0 0 19 11h-2a5 5 0 0 1-10 0H5a7.003 7.003 0 0 0 6 6.93z"/></svg>
+                    </div>
+                    {m.mediaUrl
+                      ? <audio controls src={m.mediaUrl} className="h-8 w-40 flex-1" />
+                      : <div className="flex flex-1 flex-col gap-1">
+                          <div className="h-1 w-full rounded-full bg-white/30" />
+                          <span className="text-[10px] opacity-60">Áudio</span>
+                        </div>
+                    }
+                  </div>
+                )}
+                {/* Documento */}
+                {msgType === "document" && (
+                  <div className="flex items-center gap-2.5 px-3.5 py-2.5">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/20">
+                      <svg className="size-4" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.89 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 7V3.5L18.5 9H13z"/></svg>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium">{m.fileName ?? m.text.replace("[Documento: ", "").replace("]", "")}</p>
+                      <p className="text-[10px] opacity-60">Documento</p>
+                    </div>
+                  </div>
+                )}
+                {/* Vídeo */}
+                {msgType === "video" && (
+                  <div className="flex items-center gap-2.5 px-3.5 py-2.5">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/20">
+                      <svg className="size-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+                    </div>
+                    <span className="text-sm italic opacity-80">{m.text}</span>
+                  </div>
+                )}
+                {/* Texto */}
+                {msgType === "text" && (
+                  <p className="px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap">{m.text}</p>
+                )}
+                {/* Caption de imagem */}
+                {msgType === "image" && m.mediaCaption && (
+                  <p className="px-3.5 pb-1.5 text-sm leading-relaxed">{m.mediaCaption}</p>
+                )}
+                {/* Timestamp + check */}
+                <div className={cn("flex items-center justify-end gap-1 px-3 pb-1.5", msgType !== "text" ? "pt-0" : "pt-0 -mt-1")}>
+                  <span className={cn("text-[10px]", timeColor)}>{m.time}</span>
+                  {isOut && (
+                    <svg className="size-3.5 text-[#53bdeb]" viewBox="0 0 16 15" fill="currentColor">
+                      <path d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.214a.32.32 0 0 0 .484-.033l6.272-8.048a.366.366 0 0 0-.064-.512zm-4.1 0l-.478-.372a.365.365 0 0 0-.51.063L4.566 9.879a.32.32 0 0 1-.484.033L2.891 8.71a.366.366 0 0 0-.515.006l-.423.433a.364.364 0 0 0 .006.514l1.328 1.196a.32.32 0 0 0 .484-.033l6.272-8.048a.365.365 0 0 0-.063-.512z"/>
+                    </svg>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {thread.length === 0 && (
           <p className="pt-10 text-center text-sm text-muted-foreground">Nenhuma mensagem ainda.</p>
         )}
@@ -549,10 +637,11 @@ export function InboxView() {
     }
   }
 
-  /* SSE handler — recebe mensagens reais do Z-API */
-  const handleSseMessage = useCallback((msg: {
-    id: string; channel: Channel; from: string; fromName: string; text: string; timestamp: number;
-  }) => {
+  /* Polling handler — recebe mensagens reais do Z-API (incluindo enviadas) */
+  const handleSseMessage = useCallback((msg: PolledMsg) => {
+    // fromMe=true → mensagem enviada pelo número (aparece à direita)
+    const isOut  = msg.fromMe === true;
+    // Para mensagens enviadas, o convId usa o destinatário (campo "from" = número do cliente)
     const convId = `${msg.channel}-${msg.from}`;
     const time   = new Date(msg.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
@@ -560,11 +649,12 @@ export function InboxView() {
       const existing = cs.find((c) => c.id === convId);
       if (existing) {
         return cs.map((c) => c.id === convId
-          ? { ...c, preview: msg.text, unread: c.unread + 1, time }
+          ? { ...c, preview: msg.text, unread: isOut ? c.unread : c.unread + 1, time }
           : c
         );
       }
-      // Nova conversa
+      // Nova conversa — só cria se for mensagem recebida
+      if (isOut) return cs;
       const newConv: LocalConv = {
         id:      convId,
         contact: msg.fromName,
@@ -580,7 +670,15 @@ export function InboxView() {
 
     setThreads((t) => ({
       ...t,
-      [convId]: [...(t[convId] ?? []), { from: "in", text: msg.text, time }],
+      [convId]: [...(t[convId] ?? []), {
+        from:         isOut ? "out" : "in",
+        text:         msg.text,
+        time,
+        type:         msg.msgType,
+        mediaUrl:     msg.mediaUrl,
+        mediaCaption: msg.mediaCaption,
+        fileName:     msg.fileName,
+      }],
     }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
