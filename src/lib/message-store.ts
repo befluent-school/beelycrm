@@ -89,7 +89,7 @@ export async function getRecentMessages(since?: number): Promise<InboxMessage[]>
   try {
     let query = client
       .from("inbox_messages")
-      .select("id, channel, from, from_name, text, timestamp")
+      .select("id, channel, from, from_name, text, timestamp, from_me, msg_type, media_url, media_caption, file_name")
       .order("timestamp", { ascending: false })
       .limit(200);
 
