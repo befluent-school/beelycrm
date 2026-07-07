@@ -7,10 +7,14 @@ export async function GET(request: Request) {
   const code = searchParams.get("code");
   const next = searchParams.get("next") ?? "/dashboard";
 
+  // Usa NEXT_PUBLIC_APP_URL se configurado (evita problemas de origin no Render/mobile)
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? origin;
+
   if (code) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) return NextResponse.redirect(`${origin}${next}`);
+    if (!error) return NextResponse.redirect(`${base}${next}`);
+    console.error("[auth/callback] exchangeCodeForSession error:", error.message);
   }
-  return NextResponse.redirect(`${origin}/login?error=auth`);
+  return NextResponse.redirect(`${base}/login?error=auth`);
 }

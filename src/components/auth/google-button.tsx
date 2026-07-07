@@ -1,13 +1,20 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { IS_DEMO } from "@/lib/env";
+import { IS_DEMO, env } from "@/lib/env";
 import { createClient } from "@/lib/supabase/client";
+
+// Usa a URL configurada em NEXT_PUBLIC_APP_URL, com fallback para window.location.origin
+function getCallbackUrl() {
+  const base = env.appUrl && env.appUrl !== "http://localhost:3000"
+    ? env.appUrl
+    : (typeof window !== "undefined" ? window.location.origin : "");
+  return `${base}/auth/callback`;
+}
 
 export function GoogleButton() {
   async function handleGoogle() {
     if (IS_DEMO) {
-      // Demo: skip OAuth and start a session.
       document.cookie = "beely_session=demo; path=/; max-age=604800";
       window.location.href = "/dashboard";
       return;
@@ -15,12 +22,18 @@ export function GoogleButton() {
     const supabase = createClient();
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        redirectTo: getCallbackUrl(),
+        queryParams: {
+          // Força tela de consentimento mesmo se já logado — necessário em alguns mobile browsers
+          prompt: "select_account",
+        },
+      },
     });
   }
 
   return (
-    <Button type="button" variant="outline" className="w-full" onClick={handleGoogle}>
+    <Button type="button" variant="outline" className="w-full gap-2" onClick={handleGoogle}>
       <GoogleIcon />
       Continuar com Google
     </Button>

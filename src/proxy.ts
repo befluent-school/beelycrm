@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 
 /**
- * Optimistic auth check (Next 16 Proxy, formerly Middleware).
- * Protects app routes by checking for a session cookie. Full session
- * validation happens server-side in the app layout.
+ * Proxy (Next 16 equivalent of Middleware).
+ * 1. Atualiza cookies de sessão Supabase em cada request (necessário para OAuth no mobile)
+ * 2. Protege rotas autenticadas
  */
 const PROTECTED = [
   "/dashboard",
@@ -18,10 +19,39 @@ const PROTECTED = [
   "/configuracoes",
 ];
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  let response = NextResponse.next({ request });
+
+  // Atualiza cookies de sessão Supabase (necessário para Google OAuth funcionar no mobile)
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (supabaseUrl && supabaseKey) {
+    const supabase = createServerClient(supabaseUrl, supabaseKey, {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value)
+          );
+          response = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          );
+        },
+      },
+    });
+    // Refresh do token sem bloquear — erros ignorados (modo demo sem Supabase)
+    await supabase.auth.getUser().catch(() => null);
+  }
+
+  // Proteção de rotas
   const needsAuth = PROTECTED.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-  if (!needsAuth) return NextResponse.next();
+  if (!needsAuth) return response;
 
   const hasDemoSession = request.cookies.has("beely_session");
   const hasSupabaseSession = request.cookies
@@ -34,7 +64,8 @@ export function proxy(request: NextRequest) {
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }
-  return NextResponse.next();
+
+  return response;
 }
 
 export const config = {
