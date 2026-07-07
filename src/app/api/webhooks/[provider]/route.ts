@@ -65,6 +65,9 @@ export async function POST(request: Request, ctx: Ctx) {
   let payload: unknown;
   try { payload = JSON.parse(rawBody); } catch { payload = {}; }
 
+  // Log sempre — salva no Supabase para debug em /debug
+  console.log(`[webhook:${provider}] payload:`, JSON.stringify(payload).slice(0, 500));
+
   try {
     if (provider === "whatsapp")  await handleWhatsApp(payload);
     if (provider === "instagram") await handleInstagram(payload);

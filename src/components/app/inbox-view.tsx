@@ -148,14 +148,36 @@ interface PolledMsg {
   fileName?: string;
 }
 
-function useInboxPolling(onMessage: (msg: PolledMsg) => void) {
-  const lastTs  = useRef(0);
-  const seenIds = useRef(new Set<string>());
+function useInboxPolling(
+  onMessage: (msg: PolledMsg) => void,
+  onHistory: (msgs: PolledMsg[]) => void,
+) {
+  // Começa com since=0 apenas para o carregamento inicial do histórico
+  const initialized = useRef(false);
+  const lastTs      = useRef(0);
+  const seenIds     = useRef(new Set<string>());
 
   useEffect(() => {
-    async function poll() {
+    async function loadHistory() {
       try {
-        const res = await fetch(`/api/inbox/messages?since=${lastTs.current}`);
+        // Busca últimas 100 mensagens para montar o histórico
+        const res = await fetch("/api/inbox/messages?since=0");
+        if (!res.ok) return;
+        const msgs = await res.json() as PolledMsg[];
+        // Marca todas como vistas e atualiza o lastTs
+        for (const m of msgs) {
+          seenIds.current.add(m.id);
+          if (m.timestamp > lastTs.current) lastTs.current = m.timestamp;
+        }
+        onHistory(msgs);
+      } catch { /* rede offline */ }
+    }
+
+    async function poll() {
+      if (!initialized.current) return;
+      try {
+        const since = lastTs.current > 0 ? lastTs.current : Date.now() - 5000;
+        const res = await fetch(`/api/inbox/messages?since=${since}`);
         if (!res.ok) return;
         const msgs = await res.json() as PolledMsg[];
         for (const msg of msgs) {
@@ -167,7 +189,8 @@ function useInboxPolling(onMessage: (msg: PolledMsg) => void) {
       } catch { /* rede offline */ }
     }
 
-    poll();
+    // Carrega histórico primeiro, depois inicia polling
+    loadHistory().then(() => { initialized.current = true; });
     const interval = setInterval(poll, 4000);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -783,10 +806,14 @@ export function InboxView() {
     setThreads((t) => {
       const existing = t[convId] ?? [];
       // Evita duplicar mensagens locais já adicionadas pelo handleSend
-      const alreadyLocal = isOut && existing.some(
-        (m) => m.local && m.text === msg.text
-      );
-      if (alreadyLocal) return t;
+      // Compara texto + janela de 60s para detectar a mesma mensagem
+      if (isOut) {
+        const msgTs = msg.timestamp;
+        const alreadyLocal = existing.some(
+          (m) => m.local === true && m.text === msg.text && Math.abs(msgTs - Date.now()) < 60_000
+        );
+        if (alreadyLocal) return t;
+      }
       return {
         ...t,
         [convId]: [...existing, {
@@ -804,7 +831,79 @@ export function InboxView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useInboxPolling(handlePolledMessage);
+  /* Carrega histórico inicial do Supabase e monta threads */
+  const handleHistory = useCallback((msgs: PolledMsg[]) => {
+    // Agrupa mensagens por conversa
+    const convMap = new Map<string, LocalConv>();
+    const threadMap = new Map<string, ThreadMsg[]>();
+
+    // Ordena por timestamp crescente (mais antigas primeiro)
+    const sorted = [...msgs].sort((a, b) => a.timestamp - b.timestamp);
+
+    for (const msg of sorted) {
+      const isOut  = msg.fromMe === true;
+      const convId = `${msg.channel}-${msg.from}`;
+      const time   = new Date(msg.timestamp).toLocaleTimeString("pt-BR", {
+        hour: "2-digit", minute: "2-digit",
+      });
+
+      // Monta/atualiza conversa
+      if (!convMap.has(convId) && !isOut) {
+        convMap.set(convId, {
+          id:          convId,
+          contact:     msg.fromName,
+          phone:       msg.from,
+          channel:     msg.channel,
+          preview:     msg.text,
+          unread:      0,
+          time,
+          senderPhoto: msg.senderPhoto,
+        });
+      } else if (convMap.has(convId)) {
+        const c = convMap.get(convId)!;
+        convMap.set(convId, {
+          ...c,
+          preview:     previewText({ from: isOut ? "out" : "in", text: msg.text, time, type: msg.msgType }),
+          time,
+          senderPhoto: msg.senderPhoto ?? c.senderPhoto,
+        });
+      }
+
+      // Monta thread
+      const thread = threadMap.get(convId) ?? [];
+      thread.push({
+        from:         isOut ? "out" : "in",
+        text:         msg.text,
+        time,
+        type:         msg.msgType,
+        mediaUrl:     msg.mediaUrl,
+        mediaCaption: msg.mediaCaption,
+        fileName:     msg.fileName,
+        local:        false,
+      });
+      threadMap.set(convId, thread);
+    }
+
+    if (convMap.size === 0) return;
+
+    // Ordena conversas pela mais recente
+    const sortedConvs = [...convMap.values()].sort((a, b) =>
+      b.time.localeCompare(a.time)
+    );
+
+    setConvs(sortedConvs);
+    const threadObj: Record<string, ThreadMsg[]> = {};
+    threadMap.forEach((v, k) => { threadObj[k] = v; });
+    setThreads(threadObj);
+
+    // Seleciona a primeira conversa automaticamente
+    if (sortedConvs.length > 0) {
+      setActiveConvId((cur) => cur || sortedConvs[0].id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useInboxPolling(handlePolledMessage, handleHistory);
 
   /* Demo quando canal conectado sem mensagens reais */
   useEffect(() => {
