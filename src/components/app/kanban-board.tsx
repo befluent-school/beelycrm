@@ -98,8 +98,19 @@ export function KanbanBoard() {
       toast.success("Ordem das etapas atualizada.");
     } else {
       // Mover deal entre colunas
-      if (e.over && stageIds.includes(String(e.over.id))) {
-        moveDeal(activeId, String(e.over.id));
+      if (!e.over) return;
+      const overId = String(e.over.id);
+
+      // Se soltou em cima da coluna (droppable) — usa direto
+      if (stageIds.includes(overId)) {
+        moveDeal(activeId, overId);
+        return;
+      }
+
+      // Se soltou em cima de outro deal — descobre qual coluna ele pertence
+      const targetDeal = deals.find((d) => d.id === overId);
+      if (targetDeal && stageIds.includes(targetDeal.stageId)) {
+        moveDeal(activeId, targetDeal.stageId);
       }
     }
   }

@@ -60,7 +60,7 @@ export async function POST(request: Request) {
   /* ── Persiste no Supabase como fromMe=true ──────────────── */
   const convPhone = phone.replace(/\D/g, "");
   const ts        = Date.now();
-  await pushMessage({
+  const saved = await pushMessage({
     channel:   "whatsapp",
     from:      convPhone,
     fromName:  "Eu",
@@ -70,5 +70,5 @@ export async function POST(request: Request) {
     msgType:   "text",
   });
 
-  return NextResponse.json({ ok: true, zapiOk, ts });
+  return NextResponse.json({ ok: true, zapiOk, ts, msg: saved });
 }
