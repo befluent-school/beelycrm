@@ -1,16 +1,8 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { IS_DEMO, env } from "@/lib/env";
+import { IS_DEMO } from "@/lib/env";
 import { createClient } from "@/lib/supabase/client";
-
-// Usa a URL configurada em NEXT_PUBLIC_APP_URL, com fallback para window.location.origin
-function getCallbackUrl() {
-  const base = env.appUrl && env.appUrl !== "http://localhost:3000"
-    ? env.appUrl
-    : (typeof window !== "undefined" ? window.location.origin : "");
-  return `${base}/auth/callback`;
-}
 
 export function GoogleButton() {
   async function handleGoogle() {
@@ -20,14 +12,13 @@ export function GoogleButton() {
       return;
     }
     const supabase = createClient();
+    // redirectTo é o destino APÓS o Supabase processar o callback OAuth.
+    // O Supabase usa o próprio endpoint interno para o Google — não passamos /auth/callback aqui.
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: getCallbackUrl(),
-        queryParams: {
-          // Força tela de consentimento mesmo se já logado — necessário em alguns mobile browsers
-          prompt: "select_account",
-        },
+        redirectTo: `${window.location.origin}/dashboard`,
+        queryParams: { prompt: "select_account" },
       },
     });
   }

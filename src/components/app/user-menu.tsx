@@ -10,11 +10,23 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { LogOut, Settings, User } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { logoutAction } from "@/lib/auth-actions";
+import { IS_DEMO } from "@/lib/env";
 import { initials } from "@/lib/utils";
 
 export function UserMenu({ name, email }: { name: string; email: string }) {
   const router = useRouter();
+
+  async function handleLogout() {
+    if (IS_DEMO) {
+      document.cookie = "beely_session=; path=/; max-age=0";
+      window.location.href = "/login";
+      return;
+    }
+    // Chama endpoint de logout — mais confiável que Server Action em client component
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -35,14 +47,7 @@ export function UserMenu({ name, email }: { name: string; email: string }) {
           <Settings className="size-4" /> Configurações
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          className="text-destructive"
-          onSelect={async () => {
-            try { await logoutAction(); } catch { /* redirect throws, expected */ }
-            router.push("/login");
-            router.refresh();
-          }}
-        >
+        <DropdownMenuItem className="text-destructive" onSelect={handleLogout}>
           <LogOut className="size-4" /> Sair
         </DropdownMenuItem>
       </DropdownMenuContent>
