@@ -155,7 +155,7 @@ export function KanbanBoard() {
         )}
 
         {/* Legenda de temperatura */}
-        <div className="ml-auto flex items-center gap-3 text-[10px] text-muted-foreground">
+        <div className="flex w-full items-center gap-3 text-[10px] text-muted-foreground sm:ml-auto sm:w-auto">
           {(["hot", "warm", "cold"] as const).map((t) => {
             const cfg = TEMP_CFG[t];
             return (
@@ -167,10 +167,13 @@ export function KanbanBoard() {
         </div>
       </div>
 
+      {/* Dica mobile */}
+      <p className="text-center text-[11px] text-muted-foreground/50 sm:hidden">← Deslize para ver todas as etapas →</p>
+
       {/* Board com duplo DndContext (colunas + deals) */}
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <SortableContext items={colDragIds} strategy={horizontalListSortingStrategy}>
-          <div className="flex gap-4 overflow-x-auto pb-4">
+          <div className="flex gap-3 overflow-x-auto pb-4 sm:gap-4" style={{ scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}>
             {pipeline.stages.map((stage) => {
               const stageDeals = byStage[stage.id] ?? [];
               const total = stageDeals.reduce((s, d) => s + d.value, 0);
@@ -226,8 +229,8 @@ function SortableColumn({
   return (
     <div
       ref={(node) => { setSortRef(node); setDropRef(node); }}
-      style={style}
-      className={cn("flex w-72 shrink-0 flex-col", isSortDragging && "opacity-50")}
+      style={{ ...style, scrollSnapAlign: "start" }}
+      className={cn("flex w-[80vw] shrink-0 flex-col sm:w-72", isSortDragging && "opacity-50")}
     >
       <div className="mb-2 flex items-center justify-between px-1">
         {/* Drag handle da coluna */}

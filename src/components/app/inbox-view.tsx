@@ -591,19 +591,99 @@ export function InboxView() {
   const unread = (ch: Channel) => allConvs.filter((c) => c.channel === ch && c.unread > 0).length;
   const totalUnread = allConvs.reduce((s, c) => s + c.unread, 0);
 
+  // Mobile: controla se mostra lista ou chat
+  const [mobileView, setMobileView] = useState<"list" | "chat">("list");
+
+  function openConv(convId: string) {
+    setActiveConvId(convId);
+    setConvMap((prev) => {
+      const next = new Map(prev);
+      const conv = next.get(convId);
+      if (conv) next.set(convId, { ...conv, unread: 0 });
+      return next;
+    });
+    const conv = convMap.get(convId);
+    if (conv) {
+      const msgs = [...msgMap.values()].filter((m) => `${m.channel}-${m.from}` === convId);
+      const first = msgs.sort((a, b) => a.timestamp - b.timestamp)[0];
+      if (first) registerLead(conv, first.text);
+    }
+    setMobileView("chat");
+  }
+
+  // Lista de conversas — compartilhada entre mobile e desktop
+  const ConvList = () => (
+    <div className="flex h-full flex-col bg-[#0d1117]">
+      <div className="border-b border-border p-3">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar conversa..." className="h-9 w-full rounded-xl border border-input bg-secondary/40 pl-8 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {chConvs.length === 0 && (
+          <div className="flex flex-col items-center gap-3 p-8 text-center">
+            <MessageCircleMore className="size-8 text-muted-foreground/20" />
+            <p className="text-sm text-muted-foreground">{search ? `Nenhum resultado para "${search}"` : "Nenhuma conversa ainda"}</p>
+          </div>
+        )}
+        {chConvs.map((c) => {
+          const meta   = CH[c.channel];
+          const active = activeConvId === c.id;
+          return (
+            <button
+              key={c.id}
+              onClick={() => openConv(c.id)}
+              className={cn(
+                "flex w-full items-center gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors",
+                active ? "bg-primary/[0.08] border-l-2 border-l-primary" : "hover:bg-white/[0.03]"
+              )}
+            >
+              <span className="relative shrink-0">
+                <Avatar name={c.contact} photo={c.photo} size={10} />
+                <span className={cn("absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full border-2 border-background", meta.ring)}>
+                  <meta.Icon className="size-2" />
+                </span>
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-1">
+                  <p className={cn("truncate text-sm", c.unread > 0 ? "font-bold" : "font-medium text-foreground/80")}>{c.contact}</p>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                    {new Date(c.lastTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </div>
+                <p className={cn("truncate text-xs mt-0.5", c.unread > 0 ? "text-foreground/70" : "text-muted-foreground")}>{c.lastText}</p>
+              </div>
+              {c.unread > 0 && <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">{c.unread}</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col overflow-hidden rounded-2xl border border-border bg-[#0d1117]">
+    <div className="flex h-[calc(100svh-7rem)] flex-col overflow-hidden rounded-2xl border border-border bg-[#0d1117]">
 
       {/* Abas de canal */}
-      <div className="flex shrink-0 items-center border-b border-border bg-[#111827]/80 px-4 pt-1">
-        <div className="flex items-center gap-2 mr-4 pb-1 shrink-0">
+      <div className="flex shrink-0 items-center border-b border-border bg-[#111827]/80 px-2 pt-1 sm:px-4">
+        {/* Botão voltar mobile */}
+        {mobileView === "chat" && (
+          <button
+            className="mr-2 flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-white/[0.06] sm:hidden"
+            onClick={() => setMobileView("list")}
+          >
+            <X className="size-3.5" /> Voltar
+          </button>
+        )}
+        <div className={cn("flex items-center gap-1.5 mr-3 pb-1 shrink-0", mobileView === "chat" && "hidden sm:flex")}>
           <MessageCircleMore className="size-4 text-muted-foreground" />
           <span className="text-sm font-semibold">Inbox</span>
           {totalUnread > 0 && (
             <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">{totalUnread}</span>
           )}
         </div>
-        <div className="flex items-center gap-0.5">
+        <div className={cn("flex items-center gap-0.5 overflow-x-auto", mobileView === "chat" && "hidden sm:flex")}>
           {CH_ORDER.map((ch) => {
             const meta   = CH[ch];
             const active = activeCh === ch;
@@ -612,9 +692,9 @@ export function InboxView() {
             return (
               <button
                 key={ch}
-                onClick={() => setActiveCh(ch)}
+                onClick={() => { setActiveCh(ch); setMobileView("list"); }}
                 className={cn(
-                  "relative flex items-center gap-1.5 rounded-t-lg border-b-2 px-3 py-2.5 text-xs font-medium transition-all",
+                  "relative flex shrink-0 items-center gap-1.5 rounded-t-lg border-b-2 px-2.5 py-2.5 text-xs font-medium transition-all sm:px-3",
                   active ? "border-primary bg-primary/[0.07] text-primary" : "border-transparent text-muted-foreground hover:bg-white/[0.03] hover:text-foreground"
                 )}
               >
@@ -626,13 +706,20 @@ export function InboxView() {
             );
           })}
         </div>
+        {/* Nome do contato no header mobile quando no chat */}
+        {mobileView === "chat" && activeConv && (
+          <div className="flex min-w-0 flex-1 items-center gap-2 pb-1 sm:hidden">
+            <Avatar name={activeConv.contact} photo={activeConv.photo} size={7} />
+            <span className="truncate text-sm font-semibold">{activeConv.contact}</span>
+          </div>
+        )}
       </div>
 
       {/* Corpo */}
       <div className="flex flex-1 overflow-hidden">
         {!isConnected(activeCh) ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-4 p-10 text-center">
-            {(() => { const ChLogo = CH[activeCh].Logo; return <ChLogo className="size-14 opacity-50" />; })()}
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
+            {(() => { const ChLogo = CH[activeCh].Logo; return <ChLogo className="size-12 opacity-50" />; })()}
             <div>
               <p className="font-display text-base font-bold">{CH[activeCh].label} não conectado</p>
               <p className="mt-1 text-sm text-muted-foreground max-w-xs">Conecte nas configurações para receber mensagens aqui.</p>
@@ -641,97 +728,50 @@ export function InboxView() {
           </div>
         ) : (
           <>
-            {/* Lista de conversas */}
-            <div className="flex w-72 shrink-0 flex-col border-r border-border bg-[#0d1117]">
-              <div className="border-b border-border p-3">
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar conversa..." className="h-9 w-full rounded-xl border border-input bg-secondary/40 pl-8 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto">
-                {chConvs.length === 0 && (
-                  <div className="flex flex-col items-center gap-3 p-8 text-center">
-                    <MessageCircleMore className="size-8 text-muted-foreground/20" />
-                    <p className="text-sm text-muted-foreground">{search ? `Nenhum resultado para "${search}"` : "Nenhuma conversa ainda"}</p>
-                  </div>
-                )}
-                {chConvs.map((c) => {
-                  const meta   = CH[c.channel];
-                  const active = activeConvId === c.id;
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => {
-                        setActiveConvId(c.id);
-                        setConvMap((prev) => {
-                          const next = new Map(prev);
-                          const conv = next.get(c.id);
-                          if (conv) next.set(c.id, { ...conv, unread: 0 });
-                          return next;
-                        });
-                        // Registra lead se ainda não existe
-                        const conv = convMap.get(c.id);
-                        if (conv) {
-                          const msgs = [...msgMap.values()].filter((m) => `${m.channel}-${m.from}` === c.id);
-                          const first = msgs.sort((a, b) => a.timestamp - b.timestamp)[0];
-                          if (first) registerLead(conv, first.text);
-                        }
-                      }}
-                      className={cn(
-                        "flex w-full items-center gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors",
-                        active ? "bg-primary/[0.08] border-l-2 border-l-primary" : "hover:bg-white/[0.03]"
-                      )}
-                    >
-                      <span className="relative shrink-0">
-                        <Avatar name={c.contact} photo={c.photo} size={10} />
-                        <span className={cn("absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full border-2 border-background", meta.ring)}>
-                          <meta.Icon className="size-2" />
-                        </span>
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <p className={cn("truncate text-sm", c.unread > 0 ? "font-bold" : "font-medium text-foreground/80")}>{c.contact}</p>
-                          <span className="shrink-0 text-[10px] text-muted-foreground">
-                            {new Date(c.lastTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                          </span>
-                        </div>
-                        <p className={cn("truncate text-xs mt-0.5", c.unread > 0 ? "text-foreground/70" : "text-muted-foreground")}>{c.lastText}</p>
-                      </div>
-                      {c.unread > 0 && <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">{c.unread}</span>}
-                    </button>
-                  );
-                })}
-              </div>
+            {/* MOBILE: lista OU chat (nunca os dois) */}
+            <div className={cn("flex w-full flex-col sm:hidden", mobileView !== "list" && "hidden")}>
+              <ConvList />
+            </div>
+            <div className={cn("flex w-full flex-col sm:hidden", mobileView !== "chat" && "hidden")}>
+              {activeConv ? (
+                <ChatPanel
+                  conv={activeConv} msgs={activeMsgs} sending={sending}
+                  onSend={handleSend} showAi={false} onToggleAi={() => {}}
+                  draft={draft} setDraft={setDraft}
+                />
+              ) : null}
             </div>
 
-            {/* Chat */}
-            {activeConv ? (
-              <div className="flex min-w-0 flex-1 overflow-hidden">
-                <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                  <ChatPanel
-                    conv={activeConv}
-                    msgs={activeMsgs}
-                    sending={sending}
-                    onSend={handleSend}
-                    showAi={showAi}
-                    onToggleAi={() => setShowAi((v) => !v)}
-                    draft={draft}
-                    setDraft={setDraft}
-                  />
-                </div>
-                {showAi && (
-                  <div className="flex w-[300px] shrink-0 flex-col border-l border-border bg-[#0d1117]">
-                    <AiPanel conv={activeConv} msgs={activeMsgs} onUseSuggestion={setDraft} />
+            {/* DESKTOP: 3 painéis lado a lado */}
+            <div className="hidden sm:flex sm:w-72 sm:shrink-0 sm:flex-col sm:border-r sm:border-border">
+              <ConvList />
+            </div>
+
+            {/* Chat desktop */}
+            <div className="hidden sm:flex sm:min-w-0 sm:flex-1 sm:overflow-hidden">
+              {activeConv ? (
+                <div className="flex min-w-0 flex-1 overflow-hidden">
+                  <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                    <ChatPanel
+                      conv={activeConv} msgs={activeMsgs} sending={sending}
+                      onSend={handleSend} showAi={showAi}
+                      onToggleAi={() => setShowAi((v) => !v)}
+                      draft={draft} setDraft={setDraft}
+                    />
                   </div>
-                )}
-              </div>
-            ) : (
-              <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-                <MessageCircleMore className="size-12 text-muted-foreground/20" />
-                <p className="text-sm text-muted-foreground">Selecione uma conversa</p>
-              </div>
-            )}
+                  {showAi && (
+                    <div className="flex w-[280px] shrink-0 flex-col border-l border-border bg-[#0d1117] xl:w-[300px]">
+                      <AiPanel conv={activeConv} msgs={activeMsgs} onUseSuggestion={setDraft} />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+                  <MessageCircleMore className="size-12 text-muted-foreground/20" />
+                  <p className="text-sm text-muted-foreground">Selecione uma conversa</p>
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>

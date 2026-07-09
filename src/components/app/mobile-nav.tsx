@@ -22,7 +22,7 @@ export function MobileNav() {
           <Menu className="size-5" />
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-72 p-0">
+      <SheetContent side="left" className="w-72 max-w-[85vw] p-0">
         <div className="flex h-16 items-center border-b border-border/70 px-5">
           <Logo />
         </div>

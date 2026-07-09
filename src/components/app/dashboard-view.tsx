@@ -97,19 +97,19 @@ export function DashboardView() {
   );
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 p-3 sm:space-y-6 sm:p-6">
       {/* AI summary */}
       <AiSummary />
 
       {/* Temperatura */}
       {hydrated && (
-        <div className="flex gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <TempChip icon={Flame}        label="Quente" count={tempCounts.hot}  color="text-orange-400" bg="bg-orange-400/10 border-orange-400/30" />
           <TempChip icon={Thermometer}  label="Morno"  count={tempCounts.warm} color="text-yellow-400" bg="bg-yellow-400/10 border-yellow-400/30" />
           <TempChip icon={Snowflake}    label="Frio"   count={tempCounts.cold} color="text-blue-400"   bg="bg-blue-400/10 border-blue-400/30"     />
-          <div className="ml-auto flex items-center text-xs text-muted-foreground">
+          <p className="w-full text-xs text-muted-foreground sm:ml-auto sm:w-auto">
             Temperatura dos leads abertos por tempo na etapa atual
-          </div>
+          </p>
         </div>
       )}
 

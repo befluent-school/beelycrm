@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Topbar } from "@/components/app/topbar";
@@ -10,7 +10,7 @@ export default function ImportPage() {
   return (
     <>
       <Topbar title="Importar leads" />
-      <div className="space-y-4 p-6">
+      <div className="space-y-4 p-3 sm:p-6">
         <Link href="/contatos" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
           <ArrowLeft className="size-4" /> Voltar para contatos
         </Link>
@@ -19,3 +19,4 @@ export default function ImportPage() {
     </>
   );
 }
+

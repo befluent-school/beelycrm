@@ -7,18 +7,16 @@ import { DEMO_USER } from "@/lib/demo-data";
 
 export function Topbar({ title }: { title: string }) {
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b border-border/70 bg-[#1c1c1c] px-4 sm:px-6">
+    <header className="sticky top-0 z-30 flex min-h-14 items-center gap-2 border-b border-border/70 bg-[#1c1c1c] px-3 sm:px-6">
       <MobileNav />
-      <h1 className="font-display text-lg font-bold">{title}</h1>
+      <h1 className="font-display text-base font-bold truncate min-w-0 sm:text-lg">{title}</h1>
 
       <GlobalSearch />
 
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className="ml-auto flex shrink-0 items-center gap-1">
         <QuickAdd />
         <Notifications />
-        <div className="ml-1">
-          <UserMenu name={DEMO_USER.name} email={DEMO_USER.email} />
-        </div>
+        <UserMenu name={DEMO_USER.name} email={DEMO_USER.email} />
       </div>
     </header>
   );

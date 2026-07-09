@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { Topbar } from "@/components/app/topbar";
 import { InboxView } from "@/components/app/inbox-view";
 
@@ -8,9 +8,10 @@ export default function InboxPage() {
   return (
     <>
       <Topbar title="Inbox" />
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
         <InboxView />
       </div>
     </>
   );
 }
+

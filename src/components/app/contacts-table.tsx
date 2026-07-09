@@ -28,9 +28,10 @@ export function ContactsTable() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative w-full max-w-sm sm:w-72">
+      {/* Toolbar */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex flex-1 flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1 sm:flex-none sm:w-64">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar contatos..." className="h-9 w-full rounded-lg border border-input bg-card pl-9 pr-3 text-sm outline-none focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-ring/40" />
           </div>
@@ -38,15 +39,16 @@ export function ContactsTable() {
             {sources.map((s) => <option key={s} value={s}>{s === "all" ? "Todas as origens" : s}</option>)}
           </select>
         </div>
-        <div className="flex gap-2">
-          <Button asChild variant="outline" size="sm"><Link href="/contatos/importar"><Upload className="size-4" /> Importar</Link></Button>
-          <QuickAdd defaultTab="contact" trigger={<Button size="sm"><Plus className="size-4" /> Novo contato</Button>} />
+        <div className="flex shrink-0 gap-2">
+          <Button asChild variant="outline" size="sm"><Link href="/contatos/importar"><Upload className="size-4" /><span className="hidden sm:inline"> Importar</span></Link></Button>
+          <QuickAdd defaultTab="contact" trigger={<Button size="sm"><Plus className="size-4" /><span className="hidden sm:inline"> Novo contato</span></Button>} />
         </div>
       </div>
 
       <p className="text-xs text-muted-foreground">{hydrated ? filtered.length : 0} contatos</p>
 
-      <Card className="overflow-hidden">
+      {/* Tabela desktop */}
+      <Card className="hidden overflow-hidden sm:block">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -64,10 +66,10 @@ export function ContactsTable() {
                 <tr key={c.id} onClick={() => setOpenId(c.id)} className="cursor-pointer border-b border-border/70 last:border-0 hover:bg-white/[0.03]">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <span className="flex size-9 items-center justify-center rounded-full bg-accent text-xs font-semibold text-primary">{initials(c.name)}</span>
-                      <div>
-                        <p className="font-medium">{c.name}</p>
-                        <p className="text-xs text-muted-foreground">{c.email || "—"}</p>
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-primary">{initials(c.name)}</span>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{c.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{c.email || "—"}</p>
                       </div>
                     </div>
                   </td>
@@ -85,6 +87,31 @@ export function ContactsTable() {
           {hydrated && filtered.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">Nenhum contato encontrado.</p>}
         </div>
       </Card>
+
+      {/* Lista mobile */}
+      <div className="flex flex-col gap-2 sm:hidden">
+        {hydrated && filtered.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">Nenhum contato encontrado.</p>}
+        {hydrated && filtered.map((c) => (
+          <Card key={c.id} onClick={() => setOpenId(c.id)} className="cursor-pointer p-3 active:bg-white/[0.05]">
+            <div className="flex items-center gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-semibold text-primary">{initials(c.name)}</span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium text-sm">{c.name}</p>
+                <p className="truncate text-xs text-muted-foreground">{c.company || c.email || "—"}</p>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <Badge variant="outline" className="text-[10px]">{c.source}</Badge>
+                <span className="text-xs font-bold text-primary">{c.score}</span>
+              </div>
+            </div>
+            {c.tags.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {c.tags.map((t) => <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>)}
+              </div>
+            )}
+          </Card>
+        ))}
+      </div>
 
       <ContactDrawer contactId={openId} onClose={() => setOpenId(null)} />
     </div>

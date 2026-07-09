@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { Topbar } from "@/components/app/topbar";
 import { ContactsTable } from "@/components/app/contacts-table";
 
@@ -8,9 +8,10 @@ export default function ContactsPage() {
   return (
     <>
       <Topbar title="Contatos" />
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
         <ContactsTable />
       </div>
     </>
   );
 }
+
