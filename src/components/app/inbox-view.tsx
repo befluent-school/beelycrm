@@ -445,17 +445,19 @@ export function InboxView() {
         const convId = `${m.channel}-${m.from}`;
         const existing = next.get(convId);
         const isNewer  = !existing || m.timestamp > existing.lastTime;
-        if (!existing && m.fromMe) continue; // não cria conversa só com mensagem enviada
+        // Não cria conversa nova só com fromMe — só atualiza se já existir
+        if (!existing && m.fromMe) continue;
         next.set(convId, {
           id:       convId,
           phone:    m.from,
-          contact:  m.fromName,
+          // Preserva o nome real do contato — não sobrescreve com "Eu" de mensagens fromMe
+          contact:  m.fromMe ? (existing?.contact ?? m.fromName) : m.fromName,
           channel:  m.channel,
-          lastText: m.text,
+          lastText: isNewer ? m.text : existing!.lastText,
           lastTime: isNewer ? m.timestamp : existing!.lastTime,
           unread:   existing
             ? (!m.fromMe && !isInitial ? existing.unread + 1 : existing.unread)
-            : (m.fromMe ? 0 : 1),
+            : 1,
           photo: m.senderPhoto ?? existing?.photo,
         });
       }
@@ -523,41 +525,53 @@ export function InboxView() {
     if (!conv) return;
     setSending(true);
 
-    // Cria mensagem otimista imediatamente
+    // Mensagem otimista com ID estável — fica no map até o poll substituir
     const optimisticId = `opt-${Date.now()}`;
+    const tsNow = Date.now();
     const optimistic: RawMsg = {
       id: optimisticId, channel: conv.channel, from: conv.phone,
-      fromName: conv.contact, text, timestamp: Date.now(),
+      // fromName igual ao da conversa — evita criar conversa duplicada no processmsgs
+      fromName: conv.contact, text, timestamp: tsNow,
       fromMe: true, msgType: "text",
     };
     setMsgMap((prev) => new Map(prev).set(optimisticId, optimistic));
+    // Avança o lastTs para que o próximo poll busque a partir daqui
+    if (tsNow > lastTsRef.current) lastTsRef.current = tsNow - 1;
 
     try {
       const res = await fetch("/api/inbox/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: conv.phone, text }),
+        body: JSON.stringify({ phone: conv.phone, text, contactName: conv.contact }),
       });
       const data = await res.json();
 
       if (data.ok) {
-        // Remove otimista e vai ser substituído pelo real no próximo poll
+        // Substitui otimista pelo registro real do Supabase
         setMsgMap((prev) => {
           const next = new Map(prev);
           next.delete(optimisticId);
-          // Insere a versão real imediatamente com o id do Supabase
-          if (data.msg) next.set(data.msg.id, { ...optimistic, id: data.msg.id, timestamp: data.msg.timestamp ?? optimistic.timestamp });
+          if (data.msg) {
+            next.set(data.msg.id, {
+              ...optimistic,
+              id: data.msg.id,
+              timestamp: data.msg.timestamp ?? tsNow,
+            });
+          }
           return next;
         });
         if (data.zapiOk) {
-          toast.success("Mensagem enviada");
+          toast.success("Mensagem enviada pelo WhatsApp");
         } else {
-          toast.warning("Mensagem salva mas Z-API não configurado — verifique as variáveis ZAPI_*");
+          toast.warning("Salvo no sistema, mas Z-API retornou erro — verifique os logs");
         }
       } else {
-        toast.error("Erro ao enviar mensagem");
+        // Remove otimista se falhou
+        setMsgMap((prev) => { const next = new Map(prev); next.delete(optimisticId); return next; });
+        toast.error(data.error ?? "Erro ao enviar mensagem");
       }
     } catch {
+      setMsgMap((prev) => { const next = new Map(prev); next.delete(optimisticId); return next; });
       toast.error("Falha de conexão ao enviar");
     } finally {
       setSending(false);
