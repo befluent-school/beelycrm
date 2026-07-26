@@ -445,8 +445,6 @@ export function InboxView() {
         const convId = `${m.channel}-${m.from}`;
         const existing = next.get(convId);
         const isNewer  = !existing || m.timestamp > existing.lastTime;
-        // Não cria conversa nova só com fromMe — só atualiza se já existir
-        if (!existing && m.fromMe) continue;
         next.set(convId, {
           id:       convId,
           phone:    m.from,

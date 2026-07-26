@@ -29,10 +29,13 @@ function getClient() {
   return createClient(url, key);
 }
 
-// Cache em memória para reduzir leituras do banco dentro da mesma instância
-let memCache: InboxMessage[] = [];
-let cacheLoadedAt = 0;
-const CACHE_TTL = 5_000; // 5s
+// Fallback apenas para quando o Supabase não está configurado (não usado em produção).
+// NUNCA usar como cache de leitura: em produção há múltiplas instâncias do processo
+// (Render pode escalar horizontalmente), e o processo que recebe o webhook não é
+// necessariamente o mesmo que atende o polling do frontend — um cache em memória
+// compartilhado entre "instâncias" lógicas do processo causava mensagens que
+// apareciam e sumiam (o poll batia num processo que nunca viu o push do webhook).
+let memFallback: InboxMessage[] = [];
 
 // Garante que colunas extras existam (roda uma vez por instância)
 let schemaMigrated = false;
@@ -60,11 +63,12 @@ export async function pushMessage(msg: Omit<InboxMessage, "id">): Promise<InboxM
     raw: undefined,
   };
 
-  // Atualiza cache em memória
-  memCache.push(full);
-  if (memCache.length > 200) memCache = memCache.slice(-200);
-
   const client = getClient();
+  if (!client) {
+    // Sem Supabase configurado: guarda só localmente (dev/demo)
+    memFallback.push(full);
+    if (memFallback.length > 200) memFallback = memFallback.slice(-200);
+  }
   if (client) {
     void ensureSchema(client);
     const { error } = await client.from("inbox_messages").insert({
@@ -94,18 +98,10 @@ export async function pushMessage(msg: Omit<InboxMessage, "id">): Promise<InboxM
 }
 
 export async function getRecentMessages(since?: number): Promise<InboxMessage[]> {
-  // Tenta cache em memória primeiro (dentro da mesma instância)
-  const now = Date.now();
-  if (memCache.length > 0 && now - cacheLoadedAt < CACHE_TTL) {
-    if (since == null || since === 0) return memCache.slice(-100);
-    return memCache.filter((m) => m.timestamp > since);
-  }
-
   const client = getClient();
   if (!client) {
-    // Sem Supabase: retorna apenas cache em memória
-    if (since == null || since === 0) return memCache.slice(-100);
-    return memCache.filter((m) => m.timestamp > since);
+    if (since == null || since === 0) return memFallback.slice(-100);
+    return memFallback.filter((m) => m.timestamp > since);
   }
 
   try {
@@ -138,14 +134,10 @@ export async function getRecentMessages(since?: number): Promise<InboxMessage[]>
       fileName:     r.file_name ?? undefined,
     })).reverse(); // mais antigo primeiro
 
-    // Atualiza cache
-    memCache = msgs;
-    cacheLoadedAt = now;
-
     return msgs;
   } catch (e) {
     console.error("[message-store] erro ao ler do Supabase:", e);
-    return memCache;
+    return [];
   }
 }
 
