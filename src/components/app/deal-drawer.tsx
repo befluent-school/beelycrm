@@ -69,11 +69,12 @@ export function DealDrawer({ dealId, onClose }: { dealId: string | null; onClose
 function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void }) {
   const {
     pipelines, contacts, activities,
-    winDeal, winDealAndOnboard, loseDeal, updateDeal,
+    winDeal, winDealAndOnboard, loseDeal, updateDeal, deleteDeal,
     addActivity, updateActivity, deleteActivity, toggleActivity,
   } = useStore();
 
   const [lossMode,  setLossMode]  = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [form, setForm] = useState({
     title:    deal.title,
     value:    deal.value,
@@ -154,10 +155,34 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
             <StatusBadge deal={deal} />
             {stage && <Badge variant="outline" className="font-medium">{stage.name}</Badge>}
             {selectedPipeline && <span className="text-xs text-muted-foreground">· {selectedPipeline.name}</span>}
-            <span className={cn("ml-auto flex items-center gap-1 text-xs font-medium", TEMP[temp].class)}>
+            <span className={cn("flex items-center gap-1 text-xs font-medium", TEMP[temp].class)}>
               <TempIcon className="size-3.5" /> {TEMP[temp].label}
             </span>
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="ml-auto flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+              title="Excluir lead permanentemente"
+            >
+              <Trash2 className="size-3.5" /> Excluir
+            </button>
           </div>
+
+          {confirmDelete && (
+            <div className="mt-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
+              <p className="text-xs text-destructive">
+                Excluir <strong>{deal.title}</strong> permanentemente? Essa ação não pode ser desfeita.
+              </p>
+              <div className="mt-2 flex gap-2">
+                <Button
+                  type="button" variant="destructive" size="sm" className="flex-1"
+                  onClick={() => { deleteDeal(deal.id); toast.success("Lead excluído."); onClose(); }}
+                >
+                  Confirmar exclusão
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>Cancelar</Button>
+              </div>
+            </div>
+          )}
 
           <input
             value={form.title}

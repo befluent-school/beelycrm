@@ -2,12 +2,12 @@
 import { Topbar } from "@/components/app/topbar";
 import { AutomationsView } from "@/components/app/automations-view";
 
-export const metadata: Metadata = { title: "AutomaÃ§Ãµes" };
+export const metadata: Metadata = { title: "Automações" };
 
 export default function AutomationsPage() {
   return (
     <>
-      <Topbar title="AutomaÃ§Ãµes" />
+      <Topbar title="Automações" />
       <div className="p-3 sm:p-6">
         <AutomationsView />
       </div>

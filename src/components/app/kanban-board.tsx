@@ -30,8 +30,9 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { DealDrawer } from "./deal-drawer";
+import { QuickAdd } from "./quick-add";
 import { formatCurrency, cn } from "@/lib/utils";
-import { GripVertical, Plus, MoreVertical, Trophy, XCircle, Trash2, Check, Flame, Thermometer, Snowflake } from "lucide-react";
+import { GripVertical, Plus, MoreVertical, Trophy, XCircle, Trash2, Check, Flame, Thermometer, Snowflake, UserPlus } from "lucide-react";
 
 /* ── Temperatura do lead ─────────────────────────────────────── */
 const TEMP_CFG = {
@@ -153,6 +154,12 @@ export function KanbanBoard() {
         ) : (
           <Button variant="outline" size="sm" onClick={() => setNewFunnel(true)}><Plus className="size-4" /> Novo funil</Button>
         )}
+
+        <QuickAdd
+          defaultTab="deal"
+          defaultPipelineId={pipeline.id}
+          trigger={<Button size="sm"><UserPlus className="size-4" /> Novo lead</Button>}
+        />
 
         {/* Legenda de temperatura */}
         <div className="flex w-full items-center gap-3 text-[10px] text-muted-foreground sm:ml-auto sm:w-auto">

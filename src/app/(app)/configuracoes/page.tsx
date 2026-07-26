@@ -2,7 +2,7 @@
 import { Topbar } from "@/components/app/topbar";
 import { SettingsView } from "@/components/app/settings-view";
 
-export const metadata: Metadata = { title: "ConfiguraÃ§Ãµes" };
+export const metadata: Metadata = { title: "Configurações" };
 
 type Props = { searchParams: Promise<{ tab?: string }> };
 
@@ -14,7 +14,7 @@ export default async function SettingsPage({ searchParams }: Props) {
 
   return (
     <>
-      <Topbar title="ConfiguraÃ§Ãµes" />
+      <Topbar title="Configurações" />
       <div className="p-3 sm:p-6">
         <SettingsView defaultTab={defaultTab} />
       </div>

@@ -19,7 +19,14 @@ export function ContactDrawer({ contactId, onClose }: { contactId: string | null
 }
 
 function ContactDrawerInner({ contact, onClose }: { contact: Contact; onClose: () => void }) {
-  const { deals, activities, updateContact, deleteContact } = useStore();
+  const { deals, activities, pipelines, updateContact, deleteContact, addDeal, updateDeal, moveDeal } = useStore();
+
+  // Deal aberto vinculado a este contato (se houver) — usado para pré-selecionar funil/etapa reais
+  const linkedOpenDeal = deals.find((d) => (d.contact === contact.name || d.contactId === contact.id) && d.status === "open");
+  const [pipelineId, setPipelineId] = useState<string>(linkedOpenDeal?.pipelineId ?? pipelines[0]?.id ?? "");
+  const [stageId, setStageId]       = useState<string>(linkedOpenDeal?.stageId ?? pipelines[0]?.stages[0]?.id ?? "");
+  const selectedPipeline = pipelines.find((p) => p.id === pipelineId) ?? pipelines[0];
+
   const [form, setForm] = useState<Omit<Contact, "id">>({
     name:               contact.name,
     email:              contact.email,
@@ -105,7 +112,40 @@ function ContactDrawerInner({ contact, onClose }: { contact: Contact; onClose: (
   const f = (k: keyof typeof form) => (val: string) => setForm((prev) => ({ ...prev, [k]: val }));
 
   function save() {
-    updateContact(contact.id, { ...form, score: Number(form.score), tags });
+    const pipe  = pipelines.find((p) => p.id === pipelineId);
+    const stage = pipe?.stages.find((s) => s.id === stageId);
+
+    updateContact(contact.id, {
+      ...form,
+      score: Number(form.score),
+      tags,
+      funnel: pipe?.name ?? form.funnel,
+      stage:  stage?.name ?? form.stage,
+    });
+
+    // Sincroniza com o Pipeline: cria o deal se não existir, ou move/atualiza se já existir
+    if (pipe && stage) {
+      if (linkedOpenDeal) {
+        if (linkedOpenDeal.pipelineId !== pipe.id || linkedOpenDeal.stageId !== stage.id) {
+          if (linkedOpenDeal.pipelineId !== pipe.id) {
+            updateDeal(linkedOpenDeal.id, { pipelineId: pipe.id, stageId: stage.id });
+          } else {
+            moveDeal(linkedOpenDeal.id, stage.id);
+          }
+        }
+      } else {
+        addDeal({
+          title: `${form.name} — ${pipe.name}`,
+          value: form.productValue ?? 0,
+          pipelineId: pipe.id,
+          stageId: stage.id,
+          contact: form.name,
+          contactId: contact.id,
+          owner: form.owner,
+        });
+      }
+    }
+
     toast.success("Contato atualizado.");
     onClose();
   }
@@ -169,8 +209,31 @@ function ContactDrawerInner({ contact, onClose }: { contact: Contact; onClose: (
                 <F2 label="Campanha" value={form.campaign ?? ""} onChange={f("campaign")} />
                 <F2 label="Responsavel" value={form.owner} onChange={f("owner")} />
                 <F2 label="Equipe" value={form.team ?? ""} onChange={f("team")} />
-                <F2 label="Funil" value={form.funnel ?? ""} onChange={f("funnel")} />
-                <F2 label="Etapa" value={form.stage ?? ""} onChange={f("stage")} />
+                <div>
+                  <Label className="mb-1 block text-xs text-muted-foreground">Funil</Label>
+                  <select
+                    value={pipelineId}
+                    onChange={(e) => {
+                      const pid = e.target.value;
+                      setPipelineId(pid);
+                      const p = pipelines.find((x) => x.id === pid);
+                      setStageId(p?.stages[0]?.id ?? "");
+                    }}
+                    className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm outline-none"
+                  >
+                    {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label className="mb-1 block text-xs text-muted-foreground">Etapa</Label>
+                  <select
+                    value={stageId}
+                    onChange={(e) => setStageId(e.target.value)}
+                    className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm outline-none"
+                  >
+                    {selectedPipeline?.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
                 <div className="col-span-2">
                   <Label className="mb-1.5 block text-xs">Status</Label>
                   <select

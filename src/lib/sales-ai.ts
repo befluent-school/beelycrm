@@ -1,8 +1,12 @@
 /**
- * Sales AI Engine v2 — Closer Sênior Be Fluent School
+ * Sales AI Engine v3 — Closer Sênior Be Fluent School
  *
  * Frameworks: Chris Voss · Alex Hormozi · SPIN Selling · SNAP Selling
  * Cialdini · Jordan Belfort · Chris Orlob · Jeb Blount · Sandler
+ * Caio Carneiro (Você S/A / Filosofia dos Sonhos): venda consultiva
+ * direta, diagnóstico de dor real antes de qualquer oferta, quebra de
+ * padrão em vez de script robótico, autoridade emocional + urgência
+ * genuína, e fechamento por convicção — nunca por insistência vazia.
  */
 
 export type InsightType = "interest" | "suggestion" | "objection" | "warning" | "strategy" | "closing";
@@ -138,6 +142,21 @@ function convTemp(inMsgs: { text: string }[], outMsgs: { text: string }[]): "�
   return inMsgs.length > 2 ? "🟡 Morno" : "❄️ Frio";
 }
 
+/* ── Diagnóstico de padrão conversacional (visão de closer sênior) ──
+ * Um closer sênior não olha só a última frase — ele lê o RITMO da
+ * conversa: quem pergunta mais, quem demora mais para responder,
+ * se a energia está subindo ou caindo mensagem a mensagem. */
+function conversationPattern(inMsgs: { text: string }[], outMsgs: { text: string }[]) {
+  const inQuestions  = inMsgs.filter((m) => m.text.includes("?")).length;
+  const outQuestions = outMsgs.filter((m) => m.text.includes("?")).length;
+  const avgInLen     = inMsgs.length ? inMsgs.reduce((s, m) => s + m.text.length, 0) / inMsgs.length : 0;
+  const isMonosyllabic = inMsgs.length >= 2 && avgInLen < 15; // respostas tipo "ok", "sim", "blz"
+  const leadDrivingConvo = inQuestions > outQuestions; // lead pergunta mais que o vendedor — bom sinal
+  const salesDominating  = outMsgs.length > inMsgs.length * 2 && inMsgs.length > 0; // vendedor falando demais
+
+  return { inQuestions, outQuestions, isMonosyllabic, leadDrivingConvo, salesDominating };
+}
+
 /* ── Motor principal ────────────────────────────────────────── */
 
 export function analyzeConversation(ctx: ConversationContext): SalesInsight[] {
@@ -174,6 +193,45 @@ export function analyzeConversation(ctx: ConversationContext): SalesInsight[] {
   const deadlineKw   = detectFirst(allIn, DEADLINE_URGENCY);
   const painKw       = detectFirst(allIn, PAIN_SIGNALS);
   const msgRatio     = outMessages.length > 0 ? inMessages.length / outMessages.length : 0;
+  const pattern      = conversationPattern(inMessages, outMessages);
+
+  /* ═══ DIAGNÓSTICO DO CLOSER — visão geral estilo Caio Carneiro ═══
+   * Sempre aparece quando há conversa real (2+ mensagens de cada lado).
+   * Não reage a uma palavra — lê o quadro inteiro e diz sem rodeio
+   * o que está acontecendo e o que fazer AGORA. */
+  if (inMessages.length >= 2 && outMessages.length >= 1 && !isBuying) {
+    if (pattern.salesDominating) {
+      insights.push({
+        type:      "warning",
+        priority:  "high",
+        title:     "🎙️ Você está vendendo demais, ouvindo de menos",
+        body:      `Você mandou ${outMessages.length} mensagens contra ${inMessages.length} de ${fn}. Isso não é venda, é monólogo. Quem fala mais numa negociação, perde poder — quem pergunta mais, comanda a conversa. Pare de explicar e comece a perguntar. Uma pergunta boa vale mais que cinco argumentos. Feche a boca, abra a escuta.`,
+        tag:       "Diagnóstico: desequilíbrio de fala",
+        framework: "Caio Carneiro — Venda Consultiva: quem pergunta, lidera",
+        cta:       `${fn}, deixa eu te perguntar uma coisa direto: no fundo, o que te faria dizer sim hoje?`,
+      });
+    } else if (pattern.isMonosyllabic && !isCold) {
+      insights.push({
+        type:      "warning",
+        priority:  "medium",
+        title:     "😐 Respostas curtas — energia caindo, mude o padrão",
+        body:      `${fn} está respondendo com uma ou duas palavras. Isso é sinal de piloto automático — a conversa virou obrigação, não interesse. Não continue no script. Quebre o padrão: faça uma pergunta inesperada, mais pessoal, ou mande um áudio curto em vez de texto. Gente compra de gente — reative a conexão antes de tentar vender de novo.`,
+        tag:       "Diagnóstico: energia em queda",
+        framework: "Caio Carneiro — Quebra de padrão / Rapport genuíno",
+        cta:       `${fn}, saindo um pouco do assunto: o que te fez procurar a Be Fluent especificamente agora? Curioso pra entender sua história.`,
+      });
+    } else if (pattern.leadDrivingConvo) {
+      insights.push({
+        type:      "interest",
+        priority:  "medium",
+        title:     "🙋 Lead está perguntando mais que você — ele já quer comprar",
+        body:      `${fn} fez mais perguntas do que você nesta conversa. Isso é ouro: lead que pergunta está se convencendo sozinho. Seu trabalho agora não é convencer, é RESPONDER com clareza e confiança, e depois conduzir para o próximo passo. Não deixe essa energia esfriar — proponha a ação concreta agora.`,
+        tag:       "Diagnóstico: lead engajado ativamente",
+        framework: "Caio Carneiro — Venda por convicção, não por insistência",
+        cta:       `${fn}, baseado no que você me perguntou, dá pra ver que faz sentido pra você. Bora dar o próximo passo? Te explico exatamente como começamos.`,
+      });
+    }
+  }
 
   /* ═══ ALERTA MÁXIMO: sem nenhuma resposta sua ══════════════ */
   if (noOut && inMessages.length >= 1) {

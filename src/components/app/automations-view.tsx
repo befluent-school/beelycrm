@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Plus, Zap, ArrowRight, Webhook, Trash2, Pencil, X, TrendingUp, TrendingDown, Star, Clock, MessageCircle, Mail, MousePointer, UserCheck } from "lucide-react";
+import { Plus, Zap, ArrowRight, Webhook, Trash2, Pencil, X, TrendingUp, TrendingDown, Star, Clock, MessageCircle, Mail, MousePointer, UserCheck, Save, Loader2, Repeat } from "lucide-react";
 import { useStore, useHydrated } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -378,6 +378,7 @@ export function AutomationsView() {
     <Tabs defaultValue="automations">
       <TabsList>
         <TabsTrigger value="automations">Automações</TabsTrigger>
+        <TabsTrigger value="followups">Follow-up</TabsTrigger>
         <TabsTrigger value="scoring">Lead Scoring</TabsTrigger>
         <TabsTrigger value="forms">Formulários</TabsTrigger>
       </TabsList>
@@ -424,6 +425,11 @@ export function AutomationsView() {
             </Card>
           ))}
         </div>
+      </TabsContent>
+
+      {/* ── Follow-up automático ──────────────────────────────── */}
+      <TabsContent value="followups">
+        <FollowupEditor />
       </TabsContent>
 
       {/* ── Lead Scoring ───────────────────────────────────── */}
@@ -608,5 +614,118 @@ export function AutomationsView() {
         onSave={handleSaveForm}
       />
     </Tabs>
+  );
+}
+
+/* ── Editor de Follow-up automático ───────────────────────── */
+interface FollowupTemplateUI {
+  step: number;
+  channel: "whatsapp" | "email";
+  message: string;
+  subject?: string;
+}
+
+function FollowupEditor() {
+  const [templates, setTemplates] = useState<FollowupTemplateUI[] | null>(null);
+  const [saving, setSaving] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch("/api/followup-templates")
+      .then((r) => r.json())
+      .then((data) => setTemplates(data))
+      .catch(() => setTemplates([]));
+  }, []);
+
+  function updateLocal(step: number, patch: Partial<FollowupTemplateUI>) {
+    setTemplates((prev) => prev?.map((t) => (t.step === step ? { ...t, ...patch } : t)) ?? prev);
+  }
+
+  async function save(t: FollowupTemplateUI) {
+    setSaving(t.step);
+    try {
+      const res = await fetch("/api/followup-templates", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(t),
+      });
+      if (res.ok) toast.success(`Follow-up ${t.step} salvo!`);
+      else toast.error("Erro ao salvar template.");
+    } catch {
+      toast.error("Falha de conexão ao salvar.");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-primary/30 bg-primary/[0.03]">
+        <CardContent className="flex items-start gap-3 p-4">
+          <Repeat className="mt-0.5 size-5 shrink-0 text-primary" />
+          <div className="text-sm">
+            <p className="font-semibold">Como funciona</p>
+            <p className="mt-1 text-muted-foreground">
+              Todo dia, o sistema verifica leads parados nas etapas <strong>Follow-up 1 a 5</strong> do funil de vendas.
+              Se o lead não respondeu desde o último disparo, a mensagem da etapa atual é enviada e ele avança para a próxima.
+              No Follow-up 5, se ainda não houver resposta, o lead é descartado automaticamente.
+              Se o lead responder a qualquer momento, ele volta direto para a etapa de <strong>Qualificação</strong>.
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Nomeie as etapas do seu funil exatamente como <code className="rounded bg-white/10 px-1">Follow-up 1</code>, <code className="rounded bg-white/10 px-1">Follow-up 2</code> … <code className="rounded bg-white/10 px-1">Follow-up 5</code> para o sistema reconhecê-las.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {templates === null && (
+        <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+      )}
+
+      {templates?.map((t) => (
+        <Card key={t.step}>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Badge variant="outline">{t.step}</Badge> Follow-up {t.step}
+              </CardTitle>
+              <select
+                value={t.channel}
+                onChange={(e) => updateLocal(t.step, { channel: e.target.value as "whatsapp" | "email" })}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none"
+              >
+                <option value="whatsapp">WhatsApp</option>
+                <option value="email">E-mail</option>
+              </select>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {t.channel === "email" && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Assunto do e-mail</Label>
+                <Input
+                  value={t.subject ?? ""}
+                  onChange={(e) => updateLocal(t.step, { subject: e.target.value })}
+                  placeholder="Assunto do e-mail"
+                  className="h-9"
+                />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Mensagem — use <code className="rounded bg-white/10 px-1">{"{{primeiroNome}}"}</code> para personalizar</Label>
+              <textarea
+                value={t.message}
+                onChange={(e) => updateLocal(t.step, { message: e.target.value })}
+                rows={3}
+                className="w-full rounded-lg border border-input bg-background/50 p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40 resize-none"
+              />
+            </div>
+            <Button size="sm" onClick={() => save(t)} disabled={saving === t.step} className="gap-1.5">
+              {saving === t.step ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+              Salvar Follow-up {t.step}
+            </Button>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
   );
 }

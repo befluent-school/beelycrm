@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { pushMessage } from "@/lib/message-store";
+import { exitFollowupOnReply } from "@/lib/followup-exit";
 
 type Ctx = { params: Promise<{ provider: string }> };
 
@@ -181,6 +182,9 @@ async function handleWhatsApp(payload: unknown) {
       fileName,
       raw:          payload,
     });
+
+    // Lead respondeu → se estava em follow-up automático, tira dele e volta para Qualificação
+    if (!fromMe) void exitFollowupOnReply(phone);
     return;
   }
 

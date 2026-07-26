@@ -10,7 +10,7 @@ export default function PipelinePage() {
       <Topbar title="Pipeline" />
       <div className="space-y-4 p-3 sm:p-6">
         <p className="text-sm text-muted-foreground">
-          Crie funis e etapas, adicione negÃ³cios e arraste entre as etapas. Clique num card para ver detalhes, ganhar ou perder.
+          Crie funis e etapas, adicione negócios e arraste entre as etapas. Clique num card para ver detalhes, ganhar ou perder.
         </p>
         <KanbanBoard />
       </div>
