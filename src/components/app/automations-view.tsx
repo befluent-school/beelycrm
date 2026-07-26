@@ -625,9 +625,17 @@ interface FollowupTemplateUI {
   subject?: string;
 }
 
+interface FollowupRunResult {
+  ok: boolean;
+  processed: number;
+  results: { dealId: string; contact: string; step: number; action: string }[];
+}
+
 function FollowupEditor() {
   const [templates, setTemplates] = useState<FollowupTemplateUI[] | null>(null);
   const [saving, setSaving] = useState<number | null>(null);
+  const [running, setRunning] = useState(false);
+  const [lastRun, setLastRun] = useState<FollowupRunResult | null>(null);
 
   useEffect(() => {
     fetch("/api/followup-templates")
@@ -657,23 +665,65 @@ function FollowupEditor() {
     }
   }
 
+  async function runNow() {
+    setRunning(true);
+    setLastRun(null);
+    try {
+      const res = await fetch("/api/cron/followups");
+      const data = await res.json();
+      if (res.ok) {
+        setLastRun(data);
+        toast.success(data.processed > 0 ? `${data.processed} lead${data.processed > 1 ? "s" : ""} processado${data.processed > 1 ? "s" : ""}!` : "Nenhum lead pendente de follow-up hoje.");
+      } else {
+        toast.error(data.error ?? "Erro ao disparar follow-ups.");
+      }
+    } catch {
+      toast.error("Falha de conexão ao disparar follow-ups.");
+    } finally {
+      setRunning(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Card className="border-primary/30 bg-primary/[0.03]">
-        <CardContent className="flex items-start gap-3 p-4">
-          <Repeat className="mt-0.5 size-5 shrink-0 text-primary" />
-          <div className="text-sm">
-            <p className="font-semibold">Como funciona</p>
-            <p className="mt-1 text-muted-foreground">
-              Todo dia, o sistema verifica leads parados nas etapas <strong>Follow-up 1 a 5</strong> do funil de vendas.
-              Se o lead não respondeu desde o último disparo, a mensagem da etapa atual é enviada e ele avança para a próxima.
-              No Follow-up 5, se ainda não houver resposta, o lead é descartado automaticamente.
-              Se o lead responder a qualquer momento, ele volta direto para a etapa de <strong>Qualificação</strong>.
-            </p>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Nomeie as etapas do seu funil exatamente como <code className="rounded bg-white/10 px-1">Follow-up 1</code>, <code className="rounded bg-white/10 px-1">Follow-up 2</code> … <code className="rounded bg-white/10 px-1">Follow-up 5</code> para o sistema reconhecê-las.
-            </p>
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <Repeat className="mt-0.5 size-5 shrink-0 text-primary" />
+            <div className="text-sm">
+              <p className="font-semibold">Como funciona</p>
+              <p className="mt-1 text-muted-foreground">
+                Leads parados nas etapas <strong>Follow-up 1 a 5</strong> do funil de vendas recebem a mensagem da etapa atual quando você clica em disparar (recomendado: 1x por dia).
+                Se o lead não respondeu desde o último disparo, ele avança para a próxima etapa.
+                No Follow-up 5, se ainda não houver resposta, o lead é descartado automaticamente.
+                Se o lead responder a qualquer momento, ele volta direto para a etapa de <strong>Qualificação</strong>.
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Nomeie as etapas do seu funil exatamente como <code className="rounded bg-white/10 px-1">Follow-up 1</code>, <code className="rounded bg-white/10 px-1">Follow-up 2</code> … <code className="rounded bg-white/10 px-1">Follow-up 5</code> para o sistema reconhecê-las.
+              </p>
+            </div>
           </div>
+          <div className="mt-4 flex items-center gap-3 border-t border-border/60 pt-4">
+            <Button onClick={runNow} disabled={running} className="gap-1.5">
+              {running ? <Loader2 className="size-4 animate-spin" /> : <Zap className="size-4" />}
+              {running ? "Disparando..." : "Disparar follow-ups de hoje"}
+            </Button>
+            {lastRun && (
+              <p className="text-xs text-muted-foreground">
+                Último disparo: <strong className="text-foreground">{lastRun.processed}</strong> lead{lastRun.processed !== 1 ? "s" : ""} processado{lastRun.processed !== 1 ? "s" : ""}.
+              </p>
+            )}
+          </div>
+          {lastRun && lastRun.results.length > 0 && (
+            <div className="mt-3 space-y-1 border-t border-border/60 pt-3">
+              {lastRun.results.map((r, i) => (
+                <div key={i} className="flex items-center justify-between text-xs">
+                  <span className="text-foreground">{r.contact}</span>
+                  <span className="text-muted-foreground">Follow-up {r.step} → {r.action}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

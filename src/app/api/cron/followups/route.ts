@@ -8,14 +8,17 @@ export const maxDuration = 60;
 
 /**
  * GET /api/cron/followups
- * Roda 1x por dia (agendado externamente — Render Cron Job ou similar).
+ * Disparado manualmente pelo botão "Disparar follow-ups de hoje" em
+ * Automações → Follow-up. Também pode ser agendado externamente
+ * (Render Cron Job, cron-job.org etc) se preferir automação total.
  *
  * Regra:
  * - Lead aberto numa etapa "Follow-up N" (N=1..5) recebe a mensagem do dia.
  * - Se já recebeu follow-up hoje, pula (evita duplicar em re-execuções).
  * - Após enviar, avança para "Follow-up N+1".
  * - Se estava no Follow-up 5, é descartado (status=lost) em vez de avançar.
- * - Protegido por CRON_SECRET (query ?secret= ou header x-cron-secret).
+ * - Protegido por CRON_SECRET (query ?secret= ou header x-cron-secret) apenas
+ *   se a env var estiver definida — o botão manual não precisa dela.
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
