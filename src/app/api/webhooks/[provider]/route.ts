@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { pushMessage, wasRecentlySentByUs } from "@/lib/message-store";
 import { exitFollowupOnReply } from "@/lib/followup-exit";
 import { resolveRecentChatPhone } from "@/lib/zapi-resolve";
+import { logWebhookPayload } from "@/app/api/debug/webhook-log/route";
 
 type Ctx = { params: Promise<{ provider: string }> };
 
@@ -67,8 +68,9 @@ export async function POST(request: Request, ctx: Ctx) {
   let payload: unknown;
   try { payload = JSON.parse(rawBody); } catch { payload = {}; }
 
-  // Log sempre — salva no Supabase para debug em /debug
   console.log(`[webhook:${provider}] payload:`, JSON.stringify(payload).slice(0, 500));
+  // Salva de verdade no log visível em /debug (antes só ia para o console do Render)
+  void logWebhookPayload({ provider, ...(typeof payload === "object" && payload ? payload : {}) });
 
   try {
     if (provider === "whatsapp")  await handleWhatsApp(payload);

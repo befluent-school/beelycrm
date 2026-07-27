@@ -17,6 +17,34 @@ function getClient() {
   return createClient(url, key);
 }
 
+/** Salva um payload no log de debug — chamado tanto por esta rota quanto
+ * diretamente pelo webhook real de produção (/api/webhooks/[provider]),
+ * para que todo evento recebido fique visível em /debug sem precisar
+ * duplicar a URL de webhook no painel da Z-API. */
+export async function logWebhookPayload(body: unknown, headers: Record<string, string> = {}) {
+  const ts = new Date().toISOString();
+  const client = getClient();
+  if (!client) return;
+  try {
+    await client.rpc("exec_sql", {
+      sql: `CREATE TABLE IF NOT EXISTS webhook_debug_log (
+        id BIGSERIAL PRIMARY KEY,
+        ts TEXT,
+        headers TEXT,
+        body TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+    });
+  } catch { /* tabela pode já existir */ }
+
+  const { error } = await client.from("webhook_debug_log").insert({
+    ts,
+    headers: JSON.stringify(headers),
+    body:    JSON.stringify(body),
+  });
+  if (error) console.error("[debug-webhook] erro Supabase:", error.message);
+}
+
 export async function POST(request: Request) {
   const rawBody = await request.text();
   let body: unknown;
@@ -25,24 +53,9 @@ export async function POST(request: Request) {
   const headers: Record<string, string> = {};
   request.headers.forEach((v, k) => { headers[k] = v; });
 
-  const ts = new Date().toISOString();
-  console.log("[debug-webhook] payload recebido:", JSON.stringify(body, null, 2));
+  await logWebhookPayload(body, headers);
 
-  const client = getClient();
-  if (client) {
-    await client.from("webhook_debug_log").insert({
-      ts,
-      headers: JSON.stringify(headers),
-      body:    JSON.stringify(body),
-    }).then(({ error }) => {
-      if (error) {
-        // Tabela pode não existir ainda — tenta criar
-        console.error("[debug-webhook] erro Supabase:", error.message);
-      }
-    });
-  }
-
-  return NextResponse.json({ received: true, ts });
+  return NextResponse.json({ received: true, ts: new Date().toISOString() });
 }
 
 export async function GET() {
