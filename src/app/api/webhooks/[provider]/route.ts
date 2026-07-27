@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
-import { pushMessage } from "@/lib/message-store";
+import { pushMessage, wasRecentlySentByUs } from "@/lib/message-store";
 import { exitFollowupOnReply } from "@/lib/followup-exit";
+import { resolveRecentChatPhone } from "@/lib/zapi-resolve";
 
 type Ctx = { params: Promise<{ provider: string }> };
 
@@ -129,24 +130,7 @@ async function handleWhatsApp(payload: unknown) {
   /* Z-API: mensagem recebida diretamente no root do payload */
   if (p.phone && !p.object) {
     const fromMe = p.fromMe ?? false;
-
-    // O webhook "Ao enviar" da Z-API é apenas um ECO da mensagem que o
-    // próprio Beely já mandou via /api/inbox/send (que já persiste a
-    // mensagem corretamente, com o phone e nome certos do lead). Para
-    // ESSA conta Z-API, esse eco reporta o campo "phone" como um LID da
-    // própria instância em vez do telefone do destinatário — o que
-    // criava uma conversa fantasma "Be Fluent | Suporte Comercial" a
-    // cada envio, em vez de aparecer na conversa do lead correto.
-    // Como já persistimos a mensagem no momento do envio, ignoramos
-    // completamente este eco para não duplicar/poluir o Inbox.
-    if (fromMe) {
-      console.log("[WhatsApp/Z-API] eco de mensagem enviada ignorado (já persistida via /api/inbox/send)");
-      return;
-    }
-
-    const phone = p.phone ?? "desconhecido";
-    const name  = p.senderName ?? phone;
-    const ts    = p.momment ?? p.timestamp ?? Date.now();
+    const ts     = p.momment ?? p.timestamp ?? Date.now();
 
     // Detecta tipo de mídia e extrai dados
     let msgType: "text" | "image" | "audio" | "document" | "video" = "text";
@@ -184,7 +168,52 @@ async function handleWhatsApp(payload: unknown) {
     }
 
     const senderPhoto = p.senderPhoto ?? p.photo ?? undefined;
-    console.log(`[WhatsApp/Z-API] ${fromMe ? "→ enviado" : "← recebido"} ${name} (${phone}): ${text}`);
+
+    if (fromMe) {
+      // O webhook "Ao enviar" da Z-API dispara para DOIS casos distintos
+      // que chegam com a mesma aparência (fromMe=true, phone=LID):
+      //   1) ECO de uma mensagem que o próprio Beely já mandou via
+      //      /api/inbox/send (que já persiste com o phone/nome certos).
+      //   2) Mensagem enviada de verdade pelo WhatsApp do CELULAR, fora
+      //      do sistema — essa precisa ser salva na conversa certa.
+      // Distinguimos pelo texto: se já existe uma mensagem fromMe com o
+      // mesmo conteúdo enviada nos últimos 30s, é eco — ignora. Senão, é
+      // genuína do celular — resolve o telefone real via GET /chats da
+      // Z-API (que retorna o número verdadeiro, ordenado pela conversa
+      // mais recente) e salva na conversa correta.
+      if (msgType === "text" && await wasRecentlySentByUs(text)) {
+        console.log("[WhatsApp/Z-API] eco de mensagem já enviada pelo sistema — ignorado");
+        return;
+      }
+
+      const resolved = await resolveRecentChatPhone();
+      if (!resolved) {
+        console.warn("[WhatsApp/Z-API] mensagem fromMe do celular sem telefone resolvido — descartada para não criar conversa fantasma");
+        return;
+      }
+
+      console.log(`[WhatsApp/Z-API] → enviado pelo celular para ${resolved.name ?? resolved.phone} (${resolved.phone}): ${text}`);
+
+      await pushMessage({
+        channel:      "whatsapp",
+        from:         resolved.phone,
+        fromName:     resolved.name ?? resolved.phone,
+        text,
+        timestamp:    typeof ts === "number" && ts > 1e12 ? ts : ts * 1000,
+        fromMe:       true,
+        senderPhoto,
+        msgType,
+        mediaUrl,
+        mediaCaption,
+        fileName,
+        raw:          payload,
+      });
+      return;
+    }
+
+    const phone = p.phone ?? "desconhecido";
+    const name  = p.senderName ?? phone;
+    console.log(`[WhatsApp/Z-API] ← recebido ${name} (${phone}): ${text}`);
 
     await pushMessage({
       channel:      "whatsapp",
@@ -192,7 +221,7 @@ async function handleWhatsApp(payload: unknown) {
       fromName:     name,
       text,
       timestamp:    typeof ts === "number" && ts > 1e12 ? ts : ts * 1000,
-      fromMe,
+      fromMe:       false,
       senderPhoto,
       msgType,
       mediaUrl,

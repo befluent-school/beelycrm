@@ -174,3 +174,35 @@ export async function getRecentMessages(since?: number): Promise<InboxMessage[]>
 export async function getAllMessages(): Promise<InboxMessage[]> {
   return getRecentMessages();
 }
+
+/**
+ * Verifica se já existe uma mensagem fromMe=true com o mesmo texto
+ * enviada recentemente (janela padrão: 30s). Usado para detectar o eco
+ * do webhook "Ao enviar" da Z-API — o /api/inbox/send já persiste a
+ * mensagem no momento do envio pelo sistema, então esse eco chega
+ * segundos depois com o mesmo conteúdo e deve ser ignorado (não é uma
+ * mensagem nova enviada pelo celular).
+ */
+export async function wasRecentlySentByUs(text: string, windowMs = 30_000): Promise<boolean> {
+  const client = getClient();
+  if (!client) {
+    const since = Date.now() - windowMs;
+    return memFallback.some((m) => m.fromMe && m.text === text && m.timestamp > since);
+  }
+
+  try {
+    const since = Date.now() - windowMs;
+    const { data, error } = await client
+      .from("inbox_messages")
+      .select("id")
+      .eq("from_me", true)
+      .eq("text", text)
+      .gt("timestamp", since)
+      .limit(1);
+    if (error) throw error;
+    return (data ?? []).length > 0;
+  } catch (e) {
+    console.error("[message-store] erro ao checar duplicata:", e);
+    return false;
+  }
+}
