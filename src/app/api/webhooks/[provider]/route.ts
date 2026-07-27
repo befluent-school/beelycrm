@@ -128,24 +128,25 @@ async function handleWhatsApp(payload: unknown) {
 
   /* Z-API: mensagem recebida diretamente no root do payload */
   if (p.phone && !p.object) {
-    const rawPhone = p.phone ?? "desconhecido";
-    // Alguns contatos com privacidade de número ativada retornam um LID
-    // ("18404815680435@lid") no campo phone em vez do telefone real — a
-    // Z-API não consegue resolver o número nesse caso. Marcamos para que
-    // o frontend não deixe enviar mensagem via API para esse pseudo-número.
-    const isLid  = rawPhone.includes("@lid") || rawPhone.includes("@");
-    const phone  = isLid ? rawPhone.replace(/@.*/, "") : rawPhone;
     const fromMe = p.fromMe ?? false;
-    // Quando fromMe=true, "senderName" é o nome de QUEM ENVIOU (você/sua instância) —
-    // usar isso como nome da conversa criava leads com o nome "Be Fluent | Suporte...".
-    // "chatName" é o nome do CONTATO/chat em ambos os casos — é o correto para exibir.
-    const name   = p.chatName ?? (fromMe ? phone : p.senderName ?? phone);
-    const ts     = p.momment ?? p.timestamp ?? Date.now();
 
-    console.log(`[WhatsApp/Z-API] payload bruto fromMe=${fromMe} isLid=${isLid}:`, JSON.stringify({
-      phone: p.phone, connectedPhone: p.connectedPhone, senderName: p.senderName,
-      chatName: p.chatName, fromMe: p.fromMe,
-    }));
+    // O webhook "Ao enviar" da Z-API é apenas um ECO da mensagem que o
+    // próprio Beely já mandou via /api/inbox/send (que já persiste a
+    // mensagem corretamente, com o phone e nome certos do lead). Para
+    // ESSA conta Z-API, esse eco reporta o campo "phone" como um LID da
+    // própria instância em vez do telefone do destinatário — o que
+    // criava uma conversa fantasma "Be Fluent | Suporte Comercial" a
+    // cada envio, em vez de aparecer na conversa do lead correto.
+    // Como já persistimos a mensagem no momento do envio, ignoramos
+    // completamente este eco para não duplicar/poluir o Inbox.
+    if (fromMe) {
+      console.log("[WhatsApp/Z-API] eco de mensagem enviada ignorado (já persistida via /api/inbox/send)");
+      return;
+    }
+
+    const phone = p.phone ?? "desconhecido";
+    const name  = p.senderName ?? phone;
+    const ts    = p.momment ?? p.timestamp ?? Date.now();
 
     // Detecta tipo de mídia e extrai dados
     let msgType: "text" | "image" | "audio" | "document" | "video" = "text";
@@ -197,12 +198,11 @@ async function handleWhatsApp(payload: unknown) {
       mediaUrl,
       mediaCaption,
       fileName,
-      isLid,
       raw:          payload,
     });
 
     // Lead respondeu → se estava em follow-up automático, tira dele e volta para Qualificação
-    if (!fromMe) void exitFollowupOnReply(phone);
+    void exitFollowupOnReply(phone);
     return;
   }
 
