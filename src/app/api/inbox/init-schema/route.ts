@@ -19,6 +19,7 @@ export async function GET() {
     "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS media_url TEXT",
     "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS media_caption TEXT",
     "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS file_name TEXT",
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS is_lid BOOLEAN DEFAULT FALSE",
   ];
 
   const results: { sql: string; ok: boolean; error?: string }[] = [];

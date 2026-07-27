@@ -110,22 +110,15 @@ export async function getRecentMessages(since?: number): Promise<InboxMessage[]>
     return memFallback.filter((m) => m.timestamp > since);
   }
 
-  try {
-    let query = client
-      .from("inbox_messages")
-      .select("id, channel, from, from_name, text, timestamp, from_me, sender_photo, msg_type, media_url, media_caption, file_name, is_lid")
-      .order("timestamp", { ascending: false })
-      .limit(200);
+  // Garante que a coluna is_lid (e demais) existam antes de selecioná-las —
+  // sem isso, o SELECT falha com "column does not exist" em bancos que
+  // ainda não receberam nenhum pushMessage() desde a última migração,
+  // fazendo TODAS as conversas desaparecerem (o catch abaixo retornava []).
+  await ensureSchema(client);
 
-    if (since && since > 0) {
-      query = query.gt("timestamp", since);
-    }
-
-    const { data, error } = await query;
-    if (error) throw error;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const msgs: InboxMessage[] = (data ?? []).map((r: any) => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function mapRow(r: any): InboxMessage {
+    return {
       id:           r.id,
       channel:      r.channel,
       from:         r.from,
@@ -139,12 +132,42 @@ export async function getRecentMessages(since?: number): Promise<InboxMessage[]>
       mediaCaption: r.media_caption ?? undefined,
       fileName:     r.file_name ?? undefined,
       isLid:        r.is_lid ?? false,
-    })).reverse(); // mais antigo primeiro
+    };
+  }
 
-    return msgs;
+  try {
+    let query = client
+      .from("inbox_messages")
+      .select("id, channel, from, from_name, text, timestamp, from_me, sender_photo, msg_type, media_url, media_caption, file_name, is_lid")
+      .order("timestamp", { ascending: false })
+      .limit(200);
+    if (since && since > 0) query = query.gt("timestamp", since);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    return (data ?? []).map(mapRow).reverse(); // mais antigo primeiro
   } catch (e) {
-    console.error("[message-store] erro ao ler do Supabase:", e);
-    return [];
+    // Fallback: se a coluna is_lid ainda não existir por qualquer motivo
+    // (ex: permissão insuficiente para rodar o ALTER TABLE via RPC), tenta
+    // de novo sem ela em vez de deixar o Inbox inteiro vazio.
+    console.warn("[message-store] retry sem is_lid após erro:", e);
+    try {
+      let query = client
+        .from("inbox_messages")
+        .select("id, channel, from, from_name, text, timestamp, from_me, sender_photo, msg_type, media_url, media_caption, file_name")
+        .order("timestamp", { ascending: false })
+        .limit(200);
+      if (since && since > 0) query = query.gt("timestamp", since);
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      return (data ?? []).map(mapRow).reverse();
+    } catch (e2) {
+      console.error("[message-store] erro ao ler do Supabase (fallback também falhou):", e2);
+      return [];
+    }
   }
 }
 
