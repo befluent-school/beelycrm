@@ -268,14 +268,14 @@ function seed() {
   }));
   const automations: Automation[] = [
     { id: uid(), name: "Boas-vindas no WhatsApp", trigger: "Novo lead via WhatsApp", action: "Enviar mensagem + criar tarefa", active: true },
-    { id: uid(), name: "Mover para Qualificacao", trigger: "Lead respondeu", action: "Mover negocio de etapa", active: true },
-    { id: uid(), name: "Alerta de negocio parado", trigger: "Sem atividade por 7 dias", action: "Notificar responsavel", active: false },
+    { id: uid(), name: "Mover para Qualificação", trigger: "Lead respondeu", action: "Mover negócio de etapa", active: true },
+    { id: uid(), name: "Alerta de negócio parado", trigger: "Sem atividade por 7 dias", action: "Notificar responsável", active: false },
     { id: uid(), name: "Disparo N8N - lead quente", trigger: "Score >= 75", action: "Chamar webhook N8N", active: true },
   ];
   const scoringRules: ScoringRule[] = [
     { id: uid(), label: "Abriu e-mail de proposta", points: 10 },
     { id: uid(), label: "Respondeu no WhatsApp", points: 15 },
-    { id: uid(), label: "Origem: Indicacao", points: 20 },
+    { id: uid(), label: "Origem: Indicação", points: 20 },
     { id: uid(), label: "Sem resposta ha 14 dias", points: -10 },
   ];
   const financialConfig: FinancialConfig = {

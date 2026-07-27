@@ -19,6 +19,10 @@ export interface InboxMessage {
   mediaUrl?: string;
   mediaCaption?: string;
   fileName?: string;
+  // true quando "from" é um LID do WhatsApp (número real não disponível —
+  // contato com privacidade ativada). Não é possível enviar mensagem via
+  // API para esse identificador, só visualizar o histórico recebido.
+  isLid?: boolean;
   raw?: unknown;
 }
 
@@ -50,6 +54,7 @@ async function ensureSchema(client: any) {
     "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS media_url TEXT",
     "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS media_caption TEXT",
     "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS file_name TEXT",
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS is_lid BOOLEAN DEFAULT FALSE",
   ];
   for (const sql of cols) {
     await client.rpc("exec_sql", { sql }).catch(() => null);
@@ -84,6 +89,7 @@ export async function pushMessage(msg: Omit<InboxMessage, "id">): Promise<InboxM
       media_url:     full.mediaUrl ?? null,
       media_caption: full.mediaCaption ?? null,
       file_name:     full.fileName ?? null,
+      is_lid:        full.isLid ?? false,
     });
     if (error) {
       console.error("[message-store] erro ao salvar no Supabase:", error.message);
@@ -107,7 +113,7 @@ export async function getRecentMessages(since?: number): Promise<InboxMessage[]>
   try {
     let query = client
       .from("inbox_messages")
-      .select("id, channel, from, from_name, text, timestamp, from_me, sender_photo, msg_type, media_url, media_caption, file_name")
+      .select("id, channel, from, from_name, text, timestamp, from_me, sender_photo, msg_type, media_url, media_caption, file_name, is_lid")
       .order("timestamp", { ascending: false })
       .limit(200);
 
@@ -132,6 +138,7 @@ export async function getRecentMessages(since?: number): Promise<InboxMessage[]>
       mediaUrl:     r.media_url ?? undefined,
       mediaCaption: r.media_caption ?? undefined,
       fileName:     r.file_name ?? undefined,
+      isLid:        r.is_lid ?? false,
     })).reverse(); // mais antigo primeiro
 
     return msgs;

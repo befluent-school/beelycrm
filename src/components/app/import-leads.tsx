@@ -23,35 +23,35 @@ const SYSTEM_FIELDS = [
   { key: "source",             label: "Origem",                      required: false },
   { key: "campaign",           label: "Campanha",                    required: false },
   { key: "stage",              label: "Etapa do Funil",              required: false },
-  { key: "owner",              label: "Responsavel",                 required: false },
+  { key: "owner",              label: "Responsável",                 required: false },
   { key: "status",             label: "Status (Frio/Morno/Quente)",  required: false },
   { key: "tags",               label: "Etiquetas (separadas ;)",     required: false },
-  { key: "firstNote",          label: "Primeira Anotacao",           required: false },
+  { key: "firstNote",          label: "Primeira Anotação",           required: false },
   // Empresa / Produto
-  { key: "company",            label: "Razao Social",                required: false },
+  { key: "company",            label: "Razão Social",                required: false },
   { key: "fantasyName",        label: "Nome Fantasia",               required: false },
   { key: "product",            label: "Nome do Produto",             required: false },
   { key: "productValue",       label: "Valor do Produto",            required: false },
-  { key: "productDesc",        label: "Descricao do Produto",        required: false },
+  { key: "productDesc",        label: "Descrição do Produto",        required: false },
   // Endereco pessoal
   { key: "cep",                label: "CEP",                         required: false },
-  { key: "country",            label: "Pais",                        required: false },
+  { key: "country",            label: "País",                        required: false },
   { key: "state",              label: "Estado",                      required: false },
   { key: "city",               label: "Cidade",                      required: false },
   { key: "neighborhood",       label: "Bairro",                      required: false },
   { key: "street",             label: "Logradouro",                  required: false },
   { key: "complement",         label: "Complemento",                 required: false },
-  { key: "number",             label: "Numero",                      required: false },
+  { key: "number",             label: "Número",                      required: false },
   { key: "cpfCnpj",            label: "CPF / CNPJ",                  required: false },
   // Endereco empresa
   { key: "companyCep",         label: "CEP (Empresa)",               required: false },
-  { key: "companyCountry",     label: "Pais (Empresa)",              required: false },
+  { key: "companyCountry",     label: "País (Empresa)",              required: false },
   { key: "companyState",       label: "Estado (Empresa)",            required: false },
   { key: "companyCity",        label: "Cidade (Empresa)",            required: false },
   { key: "companyNeighborhood",label: "Bairro (Empresa)",            required: false },
   { key: "companyStreet",      label: "Logradouro (Empresa)",        required: false },
   { key: "companyComplement",  label: "Complemento (Empresa)",       required: false },
-  { key: "companyNumber",      label: "Numero (Empresa)",            required: false },
+  { key: "companyNumber",      label: "Número (Empresa)",            required: false },
   // Meta Ads
   { key: "metaAdId",           label: "Meta Ad Id",                  required: false },
   { key: "metaAdName",         label: "Meta Ad Name",                required: false },
@@ -73,14 +73,14 @@ const SYSTEM_FIELDS = [
   { key: "utmTerm",            label: "UTM Term",                    required: false },
   { key: "utmContent",         label: "UTM Content",                 required: false },
   // Qualificacao
-  { key: "urgency",            label: "Principal Urgencia",          required: false },
+  { key: "urgency",            label: "Principal Urgência",          required: false },
   { key: "investmentIntent",   label: "Investimento Pretendido",     required: false },
   { key: "jobTitle",           label: "Cargo",                       required: false },
-  { key: "monthlyBudget",      label: "Opcao de Investimento Mensal",required: false },
-  { key: "contactPreference",  label: "Preferencia de Contato",      required: false },
-  { key: "mainChallenge",      label: "Maior Desafio com Ingles",    required: false },
+  { key: "monthlyBudget",      label: "Opção de Investimento Mensal",required: false },
+  { key: "contactPreference",  label: "Preferência de Contato",      required: false },
+  { key: "mainChallenge",      label: "Maior Desafio com Inglês",    required: false },
   { key: "sector",             label: "Setor Corporativo",           required: false },
-  { key: "classFrequency",     label: "Frequencia de Aulas",         required: false },
+  { key: "classFrequency",     label: "Frequência de Aulas",         required: false },
   { key: "professionalMoment", label: "Momento Profissional",        required: false },
   // Misc
   { key: "externalId",         label: "ID Externo (CRM antigo)",     required: false },
@@ -191,21 +191,21 @@ function parseCSV(text: string): string[][] {
 /* ── Modelo CSV para download ───────────────────────────────────── */
 const TEMPLATE_HEADERS = [
   "ID do Lead","Nome do Lead","Nome do Contato 1","Celular do Contato 1","E-mail do Contato 1",
-  "Origem","Campanha","Funil","Etapa","Status","Equipe","Responsavel 1","Etiqueta 1",
-  "Primeira Anotacao","CEP","Estado","Cidade","Bairro","Logradouro","Complemento","Numero","CPF/CNPJ",
-  "Razao Social","Nome Fantasia",
-  "Nome do Produto 1","Valor do Produto 1","Descricao do Produto 1",
+  "Origem","Campanha","Funil","Etapa","Status","Equipe","Responsável 1","Etiqueta 1",
+  "Primeira Anotação","CEP","Estado","Cidade","Bairro","Logradouro","Complemento","Número","CPF/CNPJ",
+  "Razão Social","Nome Fantasia",
+  "Nome do Produto 1","Valor do Produto 1","Descrição do Produto 1",
   "Meta Ads Ad Id","Meta Ads Ad Name","Meta Ads Adset Id","Meta Ads Adset Name",
   "Meta Ads Campaign Id","Meta Ads Campaign Name","Meta Ads Form Id","Meta Ads Form Name",
   "Meta Ads Page Id","Meta Ads Page Name","Meta Ads Leadgen Id","Meta Ads Platform",
   "UTM URL","UTM Medium","UTM Source","UTM Campaign","UTM Term","UTM Content",
-  "Principal urgencia","Quanto voce pretende investir no seu desenvolvimento em ingles?","Cargo",
-  "Qual dessas opcoes de investimento mensal se encaixa melhor no seu planejamento?",
-  "Como voce prefere iniciar o seu contato com a gente?",
-  "Pensando na sua rotina atual qual e o seu maior desafio ou urgencia com o ingles no trabalho hoje?",
-  "O nosso material muda de acordo com o seu setor corporativo. Qual opcao melhor define voce hoje?",
-  "Para enviarmos a tabela certa no seu WhatsApp qual frequencia de aulas voce tem mais curiosidade em conhecer?",
-  "Qual das opcoes abaixo melhor descreve o seu momento profissional atual?",
+  "Principal urgência","Quanto você pretende investir no seu desenvolvimento em inglês?","Cargo",
+  "Qual dessas opções de investimento mensal se encaixa melhor no seu planejamento?",
+  "Como você prefere iniciar o seu contato com a gente?",
+  "Pensando na sua rotina atual qual é o seu maior desafio ou urgência com o inglês no trabalho hoje?",
+  "O nosso material muda de acordo com o seu setor corporativo. Qual opção melhor define você hoje?",
+  "Para enviarmos a tabela certa no seu WhatsApp qual frequência de aulas você tem mais curiosidade em conhecer?",
+  "Qual das opções abaixo melhor descreve o seu momento profissional atual?",
 ];
 const TEMPLATE_SAMPLE = [
   ["6a18e22712708674","Thamires Esposito","Thamires Esposito","+5512981166320","",
@@ -215,7 +215,7 @@ const TEMPLATE_SAMPLE = [
    "Curso Regular - 1x/semana","303.45","",
    "","","","Referencia 2","","INSPIRE | TESTE CRIATIVOS","","INSPIRE | 1","","Be Fluent School","","ig",
    "","","","","","",
-   "quero receber informacoes no whatsapp","","executivo clt","plano bronze r$ 357/mes","","","","",""],
+   "quero receber informações no whatsapp","","executivo clt","plano bronze r$ 357/mes","","","","",""],
 ];
 
 export function ImportLeads() {
@@ -434,7 +434,7 @@ export function ImportLeads() {
                 <FileSpreadsheet className="size-5 text-primary" /> 1. Baixe o modelo
               </CardTitle>
               <CardDescription>
-                Compativel com o export do seu CRM atual (68 colunas). Abra no Excel, cole seus leads e importe aqui.
+                Compatível com o export do seu CRM atual (68 colunas). Abra no Excel, cole seus leads e importe aqui.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -451,7 +451,7 @@ export function ImportLeads() {
                 <Upload className="size-5 text-primary" /> 2. Envie seu arquivo
               </CardTitle>
               <CardDescription>
-                Aceita <strong>.xlsx</strong> (Excel) e <strong>.csv</strong>. Duplicatas sao ignoradas automaticamente.
+                Aceita <strong>.xlsx</strong> (Excel) e <strong>.csv</strong>. Duplicatas são ignoradas automaticamente.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -508,7 +508,7 @@ export function ImportLeads() {
                     </CardTitle>
                     <CardDescription>
                       {mappedCount} de {headers.length} colunas mapeadas.
-                      {!hasName && <span className="ml-1 font-medium text-destructive">Mapeie o Nome (obrigatorio).</span>}
+                      {!hasName && <span className="ml-1 font-medium text-destructive">Mapeie o Nome (obrigatório).</span>}
                     </CardDescription>
                   </div>
                   <Button variant="ghost" size="sm" className="gap-1.5 shrink-0" onClick={() => setPreview((v) => !v)}>
@@ -559,7 +559,7 @@ export function ImportLeads() {
         {/* Sidebar */}
         <div className="space-y-4">
           <Card>
-            <CardHeader><CardTitle className="text-base">Pre-visualizacao</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">Pré-visualização</CardTitle></CardHeader>
             <CardContent>
               {rows.length === 0 ? (
                 <div className="flex flex-col items-center gap-3 py-8 text-center">
@@ -602,7 +602,7 @@ export function ImportLeads() {
                     <span key={s.id} className="rounded-full border border-border bg-secondary/30 px-2 py-0.5 text-[10px]">{s.name}</span>
                   ))}
                 </div>
-                <p className="text-[10px] text-muted-foreground">Duplicatas (mesmo telefone, e-mail ou nome) sao ignoradas automaticamente.</p>
+                <p className="text-[10px] text-muted-foreground">Duplicatas (mesmo telefone, e-mail ou nome) são ignoradas automaticamente.</p>
               </CardContent>
             </Card>
           )}

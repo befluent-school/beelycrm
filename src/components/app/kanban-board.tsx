@@ -194,7 +194,7 @@ export function KanbanBoard() {
                   probability={stage.probability}
                   onAddDeal={() => setAddDealStage(stage.id)}
                   onRename={(name) => renameStage(pipeline.id, stage.id, name)}
-                  onDelete={() => { if (confirm(`Excluir a etapa "${stage.name}"? Os negocios nela serao removidos.`)) deleteStage(pipeline.id, stage.id); }}
+                  onDelete={() => { if (confirm(`Excluir a etapa "${stage.name}"? Os negócios nela serão removidos.`)) deleteStage(pipeline.id, stage.id); }}
                 >
                   {stageDeals.map((d) => (
                     <DealCard key={d.id} deal={d} onClick={() => setOpenDealId(d.id)} />
@@ -267,7 +267,7 @@ function SortableColumn({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => setRenaming(true)}>Renomear etapa</DropdownMenuItem>
-            <DropdownMenuItem onClick={onAddDeal}>Adicionar negocio</DropdownMenuItem>
+            <DropdownMenuItem onClick={onAddDeal}>Adicionar negócio</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-destructive" onClick={onDelete}>Excluir etapa</DropdownMenuItem>
           </DropdownMenuContent>
@@ -288,7 +288,7 @@ function SortableColumn({
       >
         {children}
         <button onClick={onAddDeal} className="mt-1 flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/70 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary">
-          <Plus className="size-3.5" /> Adicionar negocio
+          <Plus className="size-3.5" /> Adicionar negócio
         </button>
       </div>
     </div>
@@ -369,13 +369,13 @@ function DealCardView({
   );
 }
 
-/* ── Modal novo negocio ─────────────────────────────────────────── */
+/* ── Modal novo negócio ─────────────────────────────────────────── */
 function AddDealDialog({ pipelineId, stageId, onClose }: { pipelineId: string; stageId: string | null; onClose: () => void }) {
   const addDeal = useStore((s) => s.addDeal);
   return (
     <Dialog open={Boolean(stageId)} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Novo negocio</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Novo negócio</DialogTitle></DialogHeader>
         <form
           className="space-y-3"
           onSubmit={(e) => {
@@ -389,11 +389,11 @@ function AddDealDialog({ pipelineId, stageId, onClose }: { pipelineId: string; s
               contact:    String(f.get("contact") || "—"),
               owner:      DEFAULT_OWNER,
             });
-            toast.success("Negocio adicionado a etapa!");
+            toast.success("Negócio adicionado à etapa!");
             onClose();
           }}
         >
-          <div className="space-y-1.5"><Label>Titulo</Label><Input name="title" required autoFocus placeholder="Ex: Plano anual - Empresa X" /></div>
+          <div className="space-y-1.5"><Label>Título</Label><Input name="title" required autoFocus placeholder="Ex: Plano anual - Empresa X" /></div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5"><Label>Valor (R$)</Label><Input name="value" type="number" min="0" step="0.01" placeholder="0,00" /></div>
             <div className="space-y-1.5"><Label>Contato</Label><Input name="contact" placeholder="Nome" /></div>

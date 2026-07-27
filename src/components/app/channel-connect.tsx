@@ -52,9 +52,9 @@ const CONFIGS: Record<string, ChannelConfig> = {
       {
         id: "meta_cloud", label: "Meta Cloud API", badge: "Recomendado", color: "#25D366",
         fields: [
-          { name: "phone_id", label: "Phone Number ID",              placeholder: "1029384756123",    hint: "App Meta > WhatsApp > Configuracao > Phone Number ID" },
-          { name: "token",    label: "Access Token (permanente)",     placeholder: "EAAB...",           hint: "Gerado em: Sistema de Usuarios > Gerar token de sistema" },
-          { name: "verify",   label: "Verify Token",                  placeholder: "beely-verify-123",  hint: "Qualquer texto secreto que voce escolher" },
+          { name: "phone_id", label: "Phone Number ID",              placeholder: "1029384756123",    hint: "App Meta > WhatsApp > Configuração > Phone Number ID" },
+          { name: "token",    label: "Access Token (permanente)",     placeholder: "EAAB...",           hint: "Gerado em: Sistema de Usuários > Gerar token de sistema" },
+          { name: "verify",   label: "Verify Token",                  placeholder: "beely-verify-123",  hint: "Qualquer texto secreto que você escolher" },
           { name: "waba_id",  label: "WhatsApp Business Account ID",  placeholder: "1234567890",        hint: "Encontrado em: Contas > Conta do WhatsApp Business" },
         ],
         steps: [
@@ -62,80 +62,80 @@ const CONFIGS: Record<string, ChannelConfig> = {
             icon: Layers,
             title: "Crie um App Meta",
             subtitle: "Passo 1 de 6",
-            description: "Acesse developers.facebook.com e va em Meus Apps > Criar app. Escolha o tipo Empresa. Na proxima tela, role ate encontrar WhatsApp e clique em Configurar.",
+            description: "Acesse developers.facebook.com e vá em Meus Apps > Criar app. Escolha o tipo Empresa. Na próxima tela, role até encontrar WhatsApp e clique em Configurar.",
             link: { label: "Abrir Meta for Developers", url: "https://developers.facebook.com/apps" },
           },
           {
             icon: Link2,
-            title: "Vincule o numero WhatsApp Business",
+            title: "Vincule o número WhatsApp Business",
             subtitle: "Passo 2 de 6",
-            description: "Dentro do app criado, va em WhatsApp > Configuracao. Siga o assistente para vincular sua Conta do WhatsApp Business (WABA) e adicionar seu numero de telefone.",
-            tip: "Use apenas numeros de WhatsApp Business (API). Numeros pessoais nao sao suportados pela Meta Cloud API.",
+            description: "Dentro do app criado, vá em WhatsApp > Configuração. Siga o assistente para vincular sua Conta do WhatsApp Business (WABA) e adicionar seu número de telefone.",
+            tip: "Use apenas números de WhatsApp Business (API). Números pessoais não são suportados pela Meta Cloud API.",
           },
           {
             icon: Key,
             title: "Anote o Phone Number ID e WABA ID",
             subtitle: "Passo 3 de 6",
-            description: "Na tela de Configuracao do WhatsApp, copie o Phone Number ID ao lado do seu numero. Em Configuracoes > Conta do WhatsApp Business, copie tambem o WABA ID.",
-            tip: "Esses dois numeros identificam sua conta e sao obrigatorios para enviar mensagens.",
+            description: "Na tela de Configuração do WhatsApp, copie o Phone Number ID ao lado do seu número. Em Configurações > Conta do WhatsApp Business, copie também o WABA ID.",
+            tip: "Esses dois números identificam sua conta e são obrigatórios para enviar mensagens.",
           },
           {
             icon: Key,
             title: "Gere um Token de Acesso Permanente",
             subtitle: "Passo 4 de 6",
-            description: "Va em Configuracoes do App > Basico > Usuarios do Sistema. Crie um usuario de sistema com permissao Admin. Clique em Gerar novo token e selecione as permissoes: whatsapp_business_messaging e whatsapp_business_management.",
-            tip: "Tokens de pagina expiram. Sempre use token de usuario de sistema para producao.",
+            description: "Vá em Configurações do App > Básico > Usuários do Sistema. Crie um usuário de sistema com permissão Admin. Clique em Gerar novo token e selecione as permissões: whatsapp_business_messaging e whatsapp_business_management.",
+            tip: "Tokens de página expiram. Sempre use token de usuário de sistema para produção.",
           },
           {
             icon: Webhook,
             title: "Configure o Webhook",
             subtitle: "Passo 5 de 6",
-            description: "No painel do App, va em WhatsApp > Configuracao > Webhooks. Cole a URL abaixo no campo URL de Retorno de Chamada e o Verify Token que voce escolheu. Depois assine os campos: messages, message_deliveries e message_reads.",
+            description: "No painel do App, vá em WhatsApp > Configuração > Webhooks. Cole a URL abaixo no campo URL de Retorno de Chamada e o Verify Token que você escolheu. Depois assine os campos: messages, message_deliveries e message_reads.",
             isWebhookStep: true,
-            tip: "O Verify Token e qualquer texto que voce inventar - voce usa o mesmo nos dois lados.",
+            tip: "O Verify Token é qualquer texto que você inventar — você usa o mesmo nos dois lados.",
           },
           {
             icon: Check,
             title: "Preencha as credenciais",
             subtitle: "Passo 6 de 6",
-            description: "Clique no botao abaixo para ir para o formulario. Preencha os 4 campos com as informacoes coletadas nos passos anteriores e clique em Conectar canal.",
-            tip: "Apos conectar, as mensagens do WhatsApp apareceram no Inbox automaticamente.",
+            description: "Clique no botão abaixo para ir para o formulário. Preencha os 4 campos com as informações coletadas nos passos anteriores e clique em Conectar canal.",
+            tip: "Após conectar, as mensagens do WhatsApp aparecerão no Inbox automaticamente.",
           },
         ],
       },
       {
-        id: "zapi", label: "Z-API", badge: "Facil", color: "#25D366",
+        id: "zapi", label: "Z-API", badge: "Fácil", color: "#25D366",
         fields: [
-          { name: "instance",     label: "ID da Instancia",          placeholder: "3C1A9B...", hint: "Instancias > selecionar > ID da instancia" },
-          { name: "token",        label: "Token de seguranca",        placeholder: "...",        hint: "Exibido na tela da instancia no painel Z-API" },
-          { name: "client_token", label: "Client Token (opcional)",   placeholder: "F...",       hint: "Seguranca extra - encontrado em Configuracoes da instancia" },
+          { name: "instance",     label: "ID da Instância",          placeholder: "3C1A9B...", hint: "Instâncias > selecionar > ID da instância" },
+          { name: "token",        label: "Token de segurança",        placeholder: "...",        hint: "Exibido na tela da instância no painel Z-API" },
+          { name: "client_token", label: "Client Token (opcional)",   placeholder: "F...",       hint: "Segurança extra — encontrado em Configurações da instância" },
         ],
         steps: [
           {
             icon: Layers,
-            title: "Crie uma conta e uma instancia",
+            title: "Crie uma conta e uma instância",
             subtitle: "Passo 1 de 5",
-            description: "Acesse z-api.io e crie sua conta gratuitamente. Depois clique em Nova instancia e defina um nome (ex: befluent-wa). Voce sera redirecionado ao painel da instancia.",
+            description: "Acesse z-api.io e crie sua conta gratuitamente. Depois clique em Nova instância e defina um nome (ex: befluent-wa). Você será redirecionado ao painel da instância.",
             link: { label: "Abrir z-api.io", url: "https://z-api.io" },
           },
           {
             icon: Link2,
             title: "Conecte o WhatsApp via QR Code",
             subtitle: "Passo 2 de 5",
-            description: "Na tela da instancia, clique no botao QR Code. No celular, abra o WhatsApp > toque nos 3 pontos > Aparelhos conectados > Conectar um aparelho. Aponte para o QR Code na tela.",
-            tip: "Mantenha o celular com bateria e internet. A instancia funciona enquanto o celular estiver conectado.",
+            description: "Na tela da instância, clique no botão QR Code. No celular, abra o WhatsApp > toque nos 3 pontos > Aparelhos conectados > Conectar um aparelho. Aponte para o QR Code na tela.",
+            tip: "Mantenha o celular com bateria e internet. A instância funciona enquanto o celular estiver conectado.",
           },
           {
             icon: Key,
             title: "Copie o Instance ID e Token",
             subtitle: "Passo 3 de 5",
-            description: "Apos a conexao ser feita (icone ficar verde), na mesma tela voce encontra o Instance ID e o Token de seguranca. Copie os dois.",
+            description: "Após a conexão ser feita (ícone ficar verde), na mesma tela você encontra o Instance ID e o Token de segurança. Copie os dois.",
           },
           {
             icon: Webhook,
             title: "Configure o Webhook",
             subtitle: "Passo 4 de 5",
-            description: "Va em Instancia > Webhooks. No campo Ao receber mensagem, cole a URL abaixo. Isso garante que o Beely receba todas as mensagens em tempo real.",
+            description: "Vá em Instância > Webhooks. No campo Ao receber mensagem, cole a URL abaixo. Isso garante que o Beely receba todas as mensagens em tempo real.",
             isWebhookStep: true,
           },
           {
@@ -143,29 +143,29 @@ const CONFIGS: Record<string, ChannelConfig> = {
             title: "Preencha as credenciais",
             subtitle: "Passo 5 de 5",
             description: "Clique em Inserir credenciais, preencha o Instance ID e Token e clique em Conectar canal.",
-            tip: "A conexao via Z-API e mais simples e nao exige aprovacao da Meta.",
+            tip: "A conexão via Z-API é mais simples e não exige aprovação da Meta.",
           },
         ],
       },
       {
         id: "evolution", label: "Evolution API", badge: "Self-hosted", color: "#25D366",
         fields: [
-          { name: "base_url", label: "URL da Evolution API",    placeholder: "https://evo.suaempresa.com", hint: "URL onde sua instancia Evolution esta hospedada" },
+          { name: "base_url", label: "URL da Evolution API",    placeholder: "https://evo.suaempresa.com", hint: "URL onde sua instância Evolution está hospedada" },
           { name: "apikey",   label: "API Key global",          placeholder: "B6D111...",                  hint: "AUTHENTICATION_API_KEY do arquivo .env da Evolution" },
-          { name: "instance", label: "Nome da instancia",       placeholder: "befluent-wa",               hint: "Nome exato da instancia criada no Evolution Manager" },
+          { name: "instance", label: "Nome da instância",       placeholder: "befluent-wa",               hint: "Nome exato da instância criada no Evolution Manager" },
         ],
         steps: [
           {
             icon: Layers,
             title: "Instale a Evolution API",
             subtitle: "Passo 1 de 5",
-            description: "A Evolution API e self-hosted - voce precisa hospedar em um servidor. A forma mais rapida e via Docker. Siga o repositorio oficial para instalar.",
-            link: { label: "Ver repositorio Evolution API", url: "https://github.com/EvolutionAPI/evolution-api" },
+            description: "A Evolution API é self-hosted — você precisa hospedar em um servidor. A forma mais rápida é via Docker. Siga o repositório oficial para instalar.",
+            link: { label: "Ver repositório Evolution API", url: "https://github.com/EvolutionAPI/evolution-api" },
             tip: "Precisa de um servidor Linux com Docker. Use qualquer VPS (DigitalOcean, Contabo, Hostinger VPS).",
           },
           {
             icon: Link2,
-            title: "Crie uma instancia",
+            title: "Crie uma instância",
             subtitle: "Passo 2 de 5",
             description: "Via Evolution Manager (painel visual) ou pela API: POST /instance/create com body {instanceName: 'befluent-wa'}. Use a API Key definida no .env como header apikey.",
           },
@@ -173,7 +173,7 @@ const CONFIGS: Record<string, ChannelConfig> = {
             icon: Key,
             title: "Conecte o WhatsApp",
             subtitle: "Passo 3 de 5",
-            description: "Faca GET /instance/connect/{nome-da-instancia} para obter o QR Code. Escaneie com o WhatsApp Business > Aparelhos conectados > Conectar aparelho.",
+            description: "Faça GET /instance/connect/{nome-da-instancia} para obter o QR Code. Escaneie com o WhatsApp Business > Aparelhos conectados > Conectar aparelho.",
           },
           {
             icon: Webhook,
@@ -186,7 +186,7 @@ const CONFIGS: Record<string, ChannelConfig> = {
             icon: Check,
             title: "Preencha as credenciais",
             subtitle: "Passo 5 de 5",
-            description: "Insira a URL base da sua Evolution API, a API Key e o nome da instancia criada. Clique em Conectar canal.",
+            description: "Insira a URL base da sua Evolution API, a API Key e o nome da instância criada. Clique em Conectar canal.",
           },
         ],
       },
@@ -200,44 +200,44 @@ const CONFIGS: Record<string, ChannelConfig> = {
         id: "meta", label: "Instagram Graph API", badge: "Oficial", color: "#E1306C",
         fields: [
           { name: "ig_id",   label: "Instagram Business Account ID", placeholder: "17841400...", hint: "Obtido via Graph API Explorer: GET /{page-id}?fields=instagram_business_account" },
-          { name: "token",   label: "Page Access Token",             placeholder: "EAAB...",     hint: "Token com permissao instagram_manage_messages" },
-          { name: "page_id", label: "Facebook Page ID",              placeholder: "1029...",     hint: "ID numerico da Pagina Facebook (Configuracoes da pagina > Sobre)" },
+          { name: "token",   label: "Page Access Token",             placeholder: "EAAB...",     hint: "Token com permissão instagram_manage_messages" },
+          { name: "page_id", label: "Facebook Page ID",              placeholder: "1029...",     hint: "ID numérico da Página Facebook (Configurações da página > Sobre)" },
         ],
         steps: [
           {
             icon: Layers,
-            title: "Requisitos antes de comecar",
+            title: "Requisitos antes de começar",
             subtitle: "Passo 1 de 6",
-            description: "Voce precisa de: (1) Conta Instagram Business ou Criador - nao pessoal. (2) Pagina no Facebook conectada a essa conta Instagram. Acesse o Meta Business Suite para verificar a conexao.",
-            tip: "Para converter: Instagram > Configuracoes > Conta > Mudar para conta profissional > Empresa.",
+            description: "Você precisa de: (1) Conta Instagram Business ou Criador — não pessoal. (2) Página no Facebook conectada a essa conta Instagram. Acesse o Meta Business Suite para verificar a conexão.",
+            tip: "Para converter: Instagram > Configurações > Conta > Mudar para conta profissional > Empresa.",
             link: { label: "Abrir Meta Business Suite", url: "https://business.facebook.com" },
           },
           {
             icon: Layers,
             title: "Crie um App Meta com produto Instagram",
             subtitle: "Passo 2 de 6",
-            description: "Va em developers.facebook.com > Meus Apps > Criar App > tipo Empresa. Adicione o produto Instagram. Em seguida, solicite a permissao instagram_manage_messages em Configuracoes do App > Permissoes.",
+            description: "Vá em developers.facebook.com > Meus Apps > Criar App > tipo Empresa. Adicione o produto Instagram. Em seguida, solicite a permissão instagram_manage_messages em Configurações do App > Permissões.",
             link: { label: "Abrir Meta for Developers", url: "https://developers.facebook.com/apps" },
           },
           {
             icon: Key,
             title: "Gere o Page Access Token",
             subtitle: "Passo 3 de 6",
-            description: "Va em Ferramentas > Explorador de API do Graph. Selecione seu App no canto superior direito. Clique em Gerar token de acesso e selecione a Pagina Facebook vinculada ao Instagram. Marque as permissoes: instagram_manage_messages, instagram_basic, pages_manage_metadata.",
-            tip: "Para producao, use um token de usuario de sistema via Meta Business Manager para que nao expire.",
+            description: "Vá em Ferramentas > Explorador de API do Graph. Selecione seu App no canto superior direito. Clique em Gerar token de acesso e selecione a Página Facebook vinculada ao Instagram. Marque as permissões: instagram_manage_messages, instagram_basic, pages_manage_metadata.",
+            tip: "Para produção, use um token de usuário de sistema via Meta Business Manager para que não expire.",
           },
           {
             icon: Key,
             title: "Obtenha o Instagram Business Account ID",
             subtitle: "Passo 4 de 6",
-            description: "No Graph API Explorer, com o token gerado, faca a chamada: GET /{page-id}?fields=instagram_business_account. O valor id dentro do objeto retornado e o Instagram Business Account ID.",
-            tip: "Substitua {page-id} pelo ID numerico da sua Pagina Facebook.",
+            description: "No Graph API Explorer, com o token gerado, faça a chamada: GET /{page-id}?fields=instagram_business_account. O valor id dentro do objeto retornado é o Instagram Business Account ID.",
+            tip: "Substitua {page-id} pelo ID numérico da sua Página Facebook.",
           },
           {
             icon: Webhook,
             title: "Configure o Webhook para DMs",
             subtitle: "Passo 5 de 6",
-            description: "No App, va em Webhooks > adicionar assinatura para Instagram. Cole a URL abaixo e um Verify Token de sua escolha. Assine o campo messages para receber mensagens diretas em tempo real.",
+            description: "No App, vá em Webhooks > adicionar assinatura para Instagram. Cole a URL abaixo e um Verify Token de sua escolha. Assine o campo messages para receber mensagens diretas em tempo real.",
             isWebhookStep: true,
           },
           {
@@ -257,43 +257,43 @@ const CONFIGS: Record<string, ChannelConfig> = {
       {
         id: "meta", label: "Meta Messenger Platform", badge: "Oficial", color: "#0084FF",
         fields: [
-          { name: "page_id",    label: "Facebook Page ID",   placeholder: "1029...",   hint: "Configuracoes da Pagina > Informacoes da pagina > ID da pagina" },
-          { name: "token",      label: "Page Access Token",  placeholder: "EAAB...",   hint: "Token com permissao pages_messaging" },
-          { name: "app_secret", label: "App Secret",         placeholder: "a1b2c3...", hint: "App Meta > Configuracoes > Basico > App Secret" },
+          { name: "page_id",    label: "Facebook Page ID",   placeholder: "1029...",   hint: "Configurações da Página > Informações da página > ID da página" },
+          { name: "token",      label: "Page Access Token",  placeholder: "EAAB...",   hint: "Token com permissão pages_messaging" },
+          { name: "app_secret", label: "App Secret",         placeholder: "a1b2c3...", hint: "App Meta > Configurações > Básico > App Secret" },
         ],
         steps: [
           {
             icon: Layers,
             title: "Crie um App Meta e adicione Messenger",
             subtitle: "Passo 1 de 6",
-            description: "Va em developers.facebook.com > Meus Apps > Criar App > tipo Empresa. Na lista de produtos, encontre Messenger e clique em Configurar.",
+            description: "Vá em developers.facebook.com > Meus Apps > Criar App > tipo Empresa. Na lista de produtos, encontre Messenger e clique em Configurar.",
             link: { label: "Abrir Meta for Developers", url: "https://developers.facebook.com/apps" },
           },
           {
             icon: Link2,
-            title: "Vincule sua Pagina Facebook",
+            title: "Vincule sua Página Facebook",
             subtitle: "Passo 2 de 6",
-            description: "Dentro do App, va em Messenger > Configuracoes do Messenger > Tokens de Acesso. Clique em Adicionar ou remover paginas e selecione a Pagina Facebook que recebera as mensagens.",
-            tip: "A Pagina Facebook precisa estar publicada (ativa) para funcionar com o Messenger API.",
+            description: "Dentro do App, vá em Messenger > Configurações do Messenger > Tokens de Acesso. Clique em Adicionar ou remover páginas e selecione a Página Facebook que receberá as mensagens.",
+            tip: "A Página Facebook precisa estar publicada (ativa) para funcionar com o Messenger API.",
           },
           {
             icon: Key,
             title: "Gere o Page Access Token",
             subtitle: "Passo 3 de 6",
-            description: "Na mesma secao de Tokens de Acesso, clique em Gerar token ao lado da sua pagina. Copie o token exibido - ele tem automaticamente a permissao pages_messaging.",
-            tip: "Para producao, gere um token permanente via Sistema de Usuarios no Meta Business Manager para evitar expiracao.",
+            description: "Na mesma seção de Tokens de Acesso, clique em Gerar token ao lado da sua página. Copie o token exibido — ele tem automaticamente a permissão pages_messaging.",
+            tip: "Para produção, gere um token permanente via Sistema de Usuários no Meta Business Manager para evitar expiração.",
           },
           {
             icon: Key,
             title: "Anote o Page ID e App Secret",
             subtitle: "Passo 4 de 6",
-            description: "O Page ID: acesse sua Pagina Facebook > Configuracoes > Sobre > Informacoes da pagina e role ate o fim. O App Secret: App Meta > Configuracoes > Basico > clique em Mostrar ao lado de App Secret.",
+            description: "O Page ID: acesse sua Página Facebook > Configurações > Sobre > Informações da página e role até o fim. O App Secret: App Meta > Configurações > Básico > clique em Mostrar ao lado de App Secret.",
           },
           {
             icon: Webhook,
             title: "Configure o Webhook",
             subtitle: "Passo 5 de 6",
-            description: "Em Messenger > Configuracoes > Webhooks, adicione um novo webhook. Cole a URL abaixo e um Verify Token. Assine os campos: messages, messaging_postbacks e messaging_optins.",
+            description: "Em Messenger > Configurações > Webhooks, adicione um novo webhook. Cole a URL abaixo e um Verify Token. Assine os campos: messages, messaging_postbacks e messaging_optins.",
             isWebhookStep: true,
           },
           {
@@ -301,7 +301,7 @@ const CONFIGS: Record<string, ChannelConfig> = {
             title: "Preencha as credenciais",
             subtitle: "Passo 6 de 6",
             description: "Clique em Inserir credenciais e preencha o Page ID, Page Access Token e App Secret. Depois clique em Conectar canal.",
-            tip: "Apos conectar, todas as mensagens recebidas na Pagina apareceram no Inbox > Messenger.",
+            tip: "Após conectar, todas as mensagens recebidas na Página aparecerão no Inbox > Messenger.",
           },
         ],
       },
@@ -330,7 +330,7 @@ function StepGuide({
       <div className="space-y-1.5">
         <div className="flex items-center justify-between text-[10px] text-muted-foreground">
           <span>{step.subtitle}</span>
-          <span>{Math.round(((current + 1) / total) * 100)}% concluido</span>
+          <span>{Math.round(((current + 1) / total) * 100)}% concluído</span>
         </div>
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-border">
           <div
@@ -436,7 +436,7 @@ function StepGuide({
             className="flex-1 gap-1.5"
             onClick={() => setCurrent((c) => c + 1)}
           >
-            Proximo passo <ChevronRight className="size-4" />
+            Próximo passo <ChevronRight className="size-4" />
           </Button>
         )}
       </div>
@@ -448,7 +448,7 @@ function StepGuide({
           onClick={onGoToForm}
           className="text-center text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
         >
-          Ja tenho as credenciais, pular para o formulario
+          Já tenho as credenciais, pular para o formulário
         </button>
       )}
     </div>
@@ -499,12 +499,12 @@ export function ChannelConnect({
       credentials: creds,
     });
 
-    toast.success(`${config.name} conectado! As conversas ja aparecem no Inbox.`);
+    toast.success(`${config.name} conectado! As conversas já aparecem no Inbox.`);
     setOpen(false);
   }
 
   function handleDisconnect() {
-    if (!confirm(`Desconectar ${config.name}? As conversas deste canal nao aparecerao mais no Inbox.`)) return;
+    if (!confirm(`Desconectar ${config.name}? As conversas deste canal não aparecerão mais no Inbox.`)) return;
     disconnectChannel(config.type);
     toast(`${config.name} desconectado.`);
     setOpen(false);
@@ -521,14 +521,14 @@ export function ChannelConnect({
           </DialogTitle>
           <DialogDescription>
             {connected
-              ? `${config.name} esta conectado via ${provider.label}.`
+              ? `${config.name} está conectado via ${provider.label}.`
               : view === "guide"
                 ? "Siga o guia abaixo para obter suas credenciais."
                 : "Preencha as credenciais obtidas no guia."}
           </DialogDescription>
         </DialogHeader>
 
-        {/* Seletor de provedor — sempre visivel */}
+        {/* Seletor de provedor — sempre visível */}
         {config.providers.length > 1 && (
           <div className="space-y-2">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -557,7 +557,7 @@ export function ChannelConnect({
           </div>
         )}
 
-        {/* Toggle guia / formulario */}
+        {/* Toggle guia / formulário */}
         <div className="flex rounded-lg border border-border bg-secondary/30 p-1 gap-1">
           <button
             type="button"
@@ -569,7 +569,7 @@ export function ChannelConnect({
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            Guia de configuracao
+            Guia de configuração
           </button>
           <button
             type="button"
@@ -594,10 +594,10 @@ export function ChannelConnect({
           />
         )}
 
-        {/* Formulario de credenciais */}
+        {/* Formulário de credenciais */}
         {view === "form" && (
           <form className="space-y-4" onSubmit={handleSubmit}>
-            {/* Webhook URL no topo do formulario como referencia */}
+            {/* Webhook URL no topo do formulário como referência */}
             <div className="rounded-lg border border-border bg-secondary/30 p-3 space-y-1.5">
               <p className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
                 <Webhook className="size-3.5" /> URL do Webhook (configure no painel do provedor)
@@ -617,7 +617,7 @@ export function ChannelConnect({
 
             <div className="flex flex-col gap-2 pt-1">
               <Button type="submit" className="w-full">
-                {connected ? "Salvar alteracoes" : "Conectar canal"}
+                {connected ? "Salvar alterações" : "Conectar canal"}
               </Button>
 
               {connected && (
@@ -636,7 +636,7 @@ export function ChannelConnect({
                 onClick={() => setView("guide")}
                 className="text-center text-[11px] text-muted-foreground hover:text-foreground hover:underline underline-offset-2"
               >
-                Voltar ao guia de configuracao
+                Voltar ao guia de configuração
               </button>
             </div>
           </form>

@@ -151,10 +151,10 @@ function ContactDrawerInner({ contact, onClose }: { contact: Contact; onClose: (
   }
 
   function handleDelete() {
-    if (confirm(`Excluir o contato "${contact.name}" e todos os negocios vinculados?`)) {
+    if (confirm(`Excluir o contato "${contact.name}" e todos os negócios vinculados?`)) {
       deleteContact(contact.id);
       onClose();
-      toast("Contato e negocios excluidos.");
+      toast("Contato e negócios excluídos.");
     }
   }
 
@@ -203,11 +203,11 @@ function ContactDrawerInner({ contact, onClose }: { contact: Contact; onClose: (
                 <F2 label="E-mail" value={form.email} onChange={f("email")} />
                 <F2 label="Telefone / Celular" value={form.phone} onChange={f("phone")} />
                 <F2 label="CPF / CNPJ" value={form.cpfCnpj ?? ""} onChange={f("cpfCnpj")} />
-                <F2 label="Razao Social" value={form.company} onChange={f("company")} />
+                <F2 label="Razão Social" value={form.company} onChange={f("company")} />
                 <F2 label="Nome Fantasia" value={form.fantasyName ?? ""} onChange={f("fantasyName")} />
                 <F2 label="Origem" value={form.source} onChange={f("source")} />
                 <F2 label="Campanha" value={form.campaign ?? ""} onChange={f("campaign")} />
-                <F2 label="Responsavel" value={form.owner} onChange={f("owner")} />
+                <F2 label="Responsável" value={form.owner} onChange={f("owner")} />
                 <F2 label="Equipe" value={form.team ?? ""} onChange={f("team")} />
                 <div>
                   <Label className="mb-1 block text-xs text-muted-foreground">Funil</Label>
@@ -282,14 +282,14 @@ function ContactDrawerInner({ contact, onClose }: { contact: Contact; onClose: (
                       <Label className="mb-1 block text-xs">Valor (R$)</Label>
                       <Input type="number" value={form.productValue ?? ""} onChange={(e) => setForm((p) => ({ ...p, productValue: Number(e.target.value) || undefined }))} />
                     </div>
-                    <div className="col-span-2"><F2 label="Descricao" value={form.productDesc ?? ""} onChange={f("productDesc")} /></div>
+                    <div className="col-span-2"><F2 label="Descrição" value={form.productDesc ?? ""} onChange={f("productDesc")} /></div>
                   </div>
                 </div>
               )}
 
               {form.firstNote && (
                 <div className="rounded-lg border border-border bg-white/[0.02] p-3">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Primeira Anotacao</p>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Primeira Anotação</p>
                   <p className="text-sm">{form.firstNote}</p>
                 </div>
               )}
@@ -304,26 +304,26 @@ function ContactDrawerInner({ contact, onClose }: { contact: Contact; onClose: (
 
             {/* ABA: Local */}
             <TabsContent value="local" className="space-y-4 p-5">
-              <Section title="Endereco Pessoal">
+              <Section title="Endereço Pessoal">
                 <div className="grid grid-cols-2 gap-2">
                   <F2 label="CEP" value={form.cep ?? ""} onChange={f("cep")} />
-                  <F2 label="Pais" value={form.country ?? ""} onChange={f("country")} />
+                  <F2 label="País" value={form.country ?? ""} onChange={f("country")} />
                   <F2 label="Estado" value={form.state ?? ""} onChange={f("state")} />
                   <F2 label="Cidade" value={form.city ?? ""} onChange={f("city")} />
                   <F2 label="Bairro" value={form.neighborhood ?? ""} onChange={f("neighborhood")} />
                   <F2 label="Logradouro" value={form.street ?? ""} onChange={f("street")} />
-                  <F2 label="Numero" value={form.number ?? ""} onChange={f("number")} />
+                  <F2 label="Número" value={form.number ?? ""} onChange={f("number")} />
                   <F2 label="Complemento" value={form.complement ?? ""} onChange={f("complement")} />
                 </div>
               </Section>
-              <Section title="Endereco Empresa">
+              <Section title="Endereço Empresa">
                 <div className="grid grid-cols-2 gap-2">
                   <F2 label="CEP" value={form.companyCep ?? ""} onChange={f("companyCep")} />
                   <F2 label="Estado" value={form.companyState ?? ""} onChange={f("companyState")} />
                   <F2 label="Cidade" value={form.companyCity ?? ""} onChange={f("companyCity")} />
                   <F2 label="Bairro" value={form.companyNeighborhood ?? ""} onChange={f("companyNeighborhood")} />
                   <F2 label="Logradouro" value={form.companyStreet ?? ""} onChange={f("companyStreet")} />
-                  <F2 label="Numero" value={form.companyNumber ?? ""} onChange={f("companyNumber")} />
+                  <F2 label="Número" value={form.companyNumber ?? ""} onChange={f("companyNumber")} />
                   <div className="col-span-2"><F2 label="Complemento" value={form.companyComplement ?? ""} onChange={f("companyComplement")} /></div>
                 </div>
               </Section>
@@ -334,13 +334,13 @@ function ContactDrawerInner({ contact, onClose }: { contact: Contact; onClose: (
             <TabsContent value="qualif" className="space-y-3 p-5">
               <div className="grid grid-cols-1 gap-3">
                 <F2 label="Cargo" value={form.jobTitle ?? ""} onChange={f("jobTitle")} />
-                <F2 label="Principal Urgencia" value={form.urgency ?? ""} onChange={f("urgency")} />
+                <F2 label="Principal Urgência" value={form.urgency ?? ""} onChange={f("urgency")} />
                 <F2 label="Investimento Pretendido" value={form.investmentIntent ?? ""} onChange={f("investmentIntent")} />
-                <F2 label="Opcao de Investimento Mensal" value={form.monthlyBudget ?? ""} onChange={f("monthlyBudget")} />
-                <F2 label="Preferencia de Contato" value={form.contactPreference ?? ""} onChange={f("contactPreference")} />
-                <F2 label="Maior Desafio com Ingles" value={form.mainChallenge ?? ""} onChange={f("mainChallenge")} />
+                <F2 label="Opção de Investimento Mensal" value={form.monthlyBudget ?? ""} onChange={f("monthlyBudget")} />
+                <F2 label="Preferência de Contato" value={form.contactPreference ?? ""} onChange={f("contactPreference")} />
+                <F2 label="Maior Desafio com Inglês" value={form.mainChallenge ?? ""} onChange={f("mainChallenge")} />
                 <F2 label="Setor Corporativo" value={form.sector ?? ""} onChange={f("sector")} />
-                <F2 label="Frequencia de Aulas" value={form.classFrequency ?? ""} onChange={f("classFrequency")} />
+                <F2 label="Frequência de Aulas" value={form.classFrequency ?? ""} onChange={f("classFrequency")} />
                 <F2 label="Momento Profissional" value={form.professionalMoment ?? ""} onChange={f("professionalMoment")} />
               </div>
               <Button onClick={save} className="w-full">Salvar</Button>
@@ -374,7 +374,7 @@ function ContactDrawerInner({ contact, onClose }: { contact: Contact; onClose: (
             {/* ABA: Negocios */}
             <TabsContent value="negocios" className="space-y-4 p-5">
               {dealsForContact.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nenhum negocio vinculado.</p>
+                <p className="text-sm text-muted-foreground">Nenhum negócio vinculado.</p>
               ) : (
                 <div className="space-y-2">
                   {dealsForContact.map((d) => (

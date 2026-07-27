@@ -94,6 +94,7 @@ interface RawMsg {
   mediaUrl?: string;
   mediaCaption?: string;
   fileName?: string;
+  isLid?: boolean;
 }
 
 interface Conv {
@@ -105,6 +106,9 @@ interface Conv {
   lastTime: number;
   unread: number;
   photo?: string;
+  // true quando "phone" é um LID do WhatsApp (contato com privacidade de
+  // número ativada) — não é possível enviar mensagem via API nesse caso.
+  isLid?: boolean;
 }
 
 /* ── Insight UI ──────────────────────────────────────────────── */
@@ -226,6 +230,11 @@ function AiPanel({ conv, msgs, onUseSuggestion }: { conv: Conv; msgs: RawMsg[]; 
         <span className="ml-auto flex size-5 items-center justify-center rounded-full bg-primary/20 text-[9px] font-bold text-primary">{insights.length}</span>
       </div>
       <div className="flex-1 space-y-2 overflow-y-auto p-3">
+        {conv.isLid && (
+          <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3 text-xs text-yellow-400">
+            🔒 Este contato tem o número protegido — o nome exibido pode não ser confiável e não é possível responder pelo sistema. Trate os insights abaixo com cautela.
+          </div>
+        )}
         {insights.length === 0 && (
           <div className="flex flex-col items-center gap-2 py-8 text-center">
             <Sparkles className="size-8 text-muted-foreground/20" />
@@ -386,20 +395,28 @@ function ChatPanel({ conv, msgs, sending, onSend, showAi, onToggleAi, draft, set
       </div>
 
       {/* Input */}
-      <form onSubmit={submit} className="flex shrink-0 items-center gap-2 border-t border-border bg-[#111827]/60 p-3">
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={`Mensagem para ${conv.contact.split(" ")[0]}...`}
-          className="h-10 flex-1 min-w-0 rounded-xl border border-input bg-background/80 px-4 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (draft.trim() && !sending) { onSend(draft.trim()); setDraft(""); } } }}
-          disabled={sending}
-        />
-        <Button type="submit" size="icon" className="size-10 shrink-0 rounded-xl" disabled={!draft.trim() || sending}>
-          {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-        </Button>
-      </form>
+      {conv.isLid ? (
+        <div className="shrink-0 border-t border-border bg-[#111827]/60 p-3">
+          <p className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-400">
+            ⚠️ Este contato tem o número protegido pelo WhatsApp (privacidade ativada) — não é possível enviar mensagens para ele pelo sistema. Você só pode visualizar o histórico recebido.
+          </p>
+        </div>
+      ) : (
+        <form onSubmit={submit} className="flex shrink-0 items-center gap-2 border-t border-border bg-[#111827]/60 p-3">
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={`Mensagem para ${conv.contact.split(" ")[0]}...`}
+            className="h-10 flex-1 min-w-0 rounded-xl border border-input bg-background/80 px-4 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (draft.trim() && !sending) { onSend(draft.trim()); setDraft(""); } } }}
+            disabled={sending}
+          />
+          <Button type="submit" size="icon" className="size-10 shrink-0 rounded-xl" disabled={!draft.trim() || sending}>
+            {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+          </Button>
+        </form>
+      )}
 
       {showLead && <LeadModal name={conv.contact} onClose={() => setShowLead(false)} />}
     </div>
@@ -457,6 +474,7 @@ export function InboxView() {
             ? (!m.fromMe && !isInitial ? existing.unread + 1 : existing.unread)
             : 1,
           photo: m.senderPhoto ?? existing?.photo,
+          isLid: m.isLid ?? existing?.isLid ?? false,
         });
       }
       return next;
@@ -504,6 +522,10 @@ export function InboxView() {
 
   /* ── Registra lead no CRM ────────────────────────────────── */
   function registerLead(conv: Conv, firstMsg: string) {
+    // Contatos com número protegido (LID) não viram lead no CRM — não há
+    // telefone real para vincular, e o "nome" nesse caso costuma ser o nome
+    // da própria instância do WhatsApp Business, não do lead de verdade.
+    if (conv.isLid) return;
     const state = useStore.getState();
     const exists = state.contacts.find((c) => c.name.toLowerCase() === conv.contact.toLowerCase());
     if (!exists) {
@@ -561,7 +583,8 @@ export function InboxView() {
         if (data.zapiOk) {
           toast.success("Mensagem enviada pelo WhatsApp");
         } else {
-          toast.warning("Salvo no sistema, mas Z-API retornou erro — verifique os logs");
+          console.error("[inbox] Z-API não confirmou envio:", data.zapiError);
+          toast.warning(`Salvo no sistema, mas WhatsApp não confirmou envio${data.zapiError ? `: ${data.zapiError.slice(0, 120)}` : ""}`);
         }
       } else {
         // Remove otimista se falhou
@@ -659,7 +682,10 @@ export function InboxView() {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-1">
-                  <p className={cn("truncate text-sm", c.unread > 0 ? "font-bold" : "font-medium text-foreground/80")}>{c.contact}</p>
+                  <p className={cn("truncate text-sm flex items-center gap-1", c.unread > 0 ? "font-bold" : "font-medium text-foreground/80")}>
+                    {c.isLid && <span title="Número protegido — sem envio via API">🔒</span>}
+                    {c.contact}
+                  </p>
                   <span className="shrink-0 text-[10px] text-muted-foreground">
                     {new Date(c.lastTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                   </span>

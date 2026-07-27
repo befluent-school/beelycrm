@@ -117,7 +117,7 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
       pipelineId: form.pipelineId,
       tags,
     });
-    toast.success("Negocio atualizado.");
+    toast.success("Negócio atualizado.");
   }
 
   function handleAddTask() {
@@ -143,7 +143,7 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
     const timestamp = new Date().toLocaleString("pt-BR");
     updateDeal(deal.id, { notes: existing ? `${existing}\n\n[${timestamp}] ${text}` : `[${timestamp}] ${text}` });
     setNewNote("");
-    toast("Anotacao salva.");
+    toast("Anotação salva.");
   }
 
   return (
@@ -257,11 +257,11 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
                   const reason = String(new FormData(e.currentTarget).get("reason") || "Sem motivo");
                   loseDeal(deal.id, reason);
                   setLossMode(false);
-                  toast("Negocio marcado como perdido.");
+                  toast("Negócio marcado como perdido.");
                   onClose();
                 }}
               >
-                <Input name="reason" placeholder="Motivo (preco, concorrente, sem fit, sem resposta...)" autoFocus />
+                <Input name="reason" placeholder="Motivo (preço, concorrente, sem fit, sem resposta...)" autoFocus />
                 <div className="flex gap-2">
                   <Button type="submit" variant="destructive" size="sm" className="flex-1">Confirmar descarte</Button>
                   <Button type="button" variant="ghost" size="sm" onClick={() => setLossMode(false)}>Cancelar</Button>
@@ -303,7 +303,7 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
               <TabsTrigger value="detalhes" className="flex-1">Detalhes</TabsTrigger>
               <TabsTrigger value="tarefas"  className="flex-1">Tarefas</TabsTrigger>
               <TabsTrigger value="notas"    className="flex-1">Anotacoes</TabsTrigger>
-              <TabsTrigger value="historico" className="flex-1">Historico</TabsTrigger>
+              <TabsTrigger value="historico" className="flex-1">Histórico</TabsTrigger>
             </TabsList>
 
             {/* ── DETALHES ─────────────────────────────────────────── */}
@@ -314,7 +314,7 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
                   <Input value={form.contact} onChange={(e) => setForm((f) => ({ ...f, contact: e.target.value }))} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Responsavel</Label>
+                  <Label>Responsável</Label>
                   <Input value={form.owner} onChange={(e) => setForm((f) => ({ ...f, owner: e.target.value }))} />
                 </div>
               </div>
@@ -401,7 +401,7 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
                   value={newTask}
                   onChange={(e) => setNewTask(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") handleAddTask(); }}
-                  placeholder="Titulo da tarefa..."
+                  placeholder="Título da tarefa..."
                   className="h-9"
                 />
                 <div className="grid grid-cols-2 gap-2">
@@ -463,16 +463,16 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
             <TabsContent value="notas" className="space-y-3">
               {/* Nova anotação */}
               <div className="rounded-lg border border-border bg-white/[0.02] p-3 space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Nova anotacao</p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Nova anotação</p>
                 <textarea
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
-                  placeholder="Digite uma anotacao..."
+                  placeholder="Digite uma anotação..."
                   rows={3}
                   className="w-full rounded-lg border border-input bg-background/50 p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40 resize-none"
                 />
                 <Button size="sm" className="w-full gap-1.5" onClick={handleAddNote} disabled={!newNote.trim()}>
-                  <Plus className="size-3.5" /> Salvar anotacao
+                  <Plus className="size-3.5" /> Salvar anotação
                 </Button>
               </div>
 
@@ -487,7 +487,7 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
                           const lines = deal.notes!.split("\n\n").filter(Boolean);
                           lines.splice(i, 1);
                           updateDeal(deal.id, { notes: lines.join("\n\n") });
-                          toast("Anotacao removida.");
+                          toast("Anotação removida.");
                         }}
                         className="absolute right-2 top-2 rounded p-1 text-muted-foreground/50 transition-colors hover:text-destructive"
                       >
@@ -497,7 +497,7 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-sm text-muted-foreground">Nenhuma anotacao ainda.</p>
+                <p className="text-center text-sm text-muted-foreground">Nenhuma anotação ainda.</p>
               )}
             </TabsContent>
 
@@ -506,7 +506,7 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
               <ol className="relative space-y-3 border-l border-border pl-5">
                 <li className="relative">
                   <span className="absolute -left-[27px] top-1.5 size-3 rounded-full border-2 border-background bg-primary" />
-                  <p className="text-sm">Negocio criado</p>
+                  <p className="text-sm">Negócio criado</p>
                   <p className="text-xs text-muted-foreground">{formatDate(deal.createdAt)}</p>
                 </li>
                 {(deal.history ?? []).map((h, i) => (
@@ -517,7 +517,7 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
                   </li>
                 ))}
                 {(deal.history ?? []).length === 0 && (
-                  <li className="text-sm text-muted-foreground">Sem movimentacoes ainda.</li>
+                  <li className="text-sm text-muted-foreground">Sem movimentações ainda.</li>
                 )}
               </ol>
             </TabsContent>

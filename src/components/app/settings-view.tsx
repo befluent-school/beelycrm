@@ -941,10 +941,10 @@ function FinancialConfigTab() {
           </Button>
 
           <div className="rounded-lg border border-border bg-white/[0.02] p-3 text-xs text-muted-foreground space-y-1">
-            <p className="font-semibold text-foreground/70">Como os calculos sao feitos:</p>
+            <p className="font-semibold text-foreground/70">Como os cálculos são feitos:</p>
             <p>• <strong>Ticket Médio</strong> = Soma de todas as vendas ÷ Número de alunos convertidos</p>
-            <p>• <strong>CAC por aluno</strong> = Investimento em marketing ÷ Alunos convertidos no periodo</p>
-            <p>• <strong>CAC por lead</strong> = Investimento em marketing ÷ Leads gerados no mes</p>
+            <p>• <strong>CAC por aluno</strong> = Investimento em marketing ÷ Alunos convertidos no período</p>
+            <p>• <strong>CAC por lead</strong> = Investimento em marketing ÷ Leads gerados no mês</p>
             <p>• <strong>LTV</strong> = (Ticket Médio ÷ Churn mensal) × Fator de duracao do contrato</p>
             <p>• <strong>LTV/CAC</strong> ≥ 3x = saudavel; ≥ 1x = cuidado; &lt; 1x = critico</p>
             <p>• <strong>Margem</strong> = Ticket Médio − Custo operacional por aluno</p>

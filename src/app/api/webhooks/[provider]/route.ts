@@ -84,6 +84,7 @@ export async function POST(request: Request, ctx: Ctx) {
 
 interface ZApiMessage {
   phone?: string;
+  connectedPhone?: string;
   fromMe?: boolean;
   momment?: number;
   timestamp?: number;
@@ -94,7 +95,9 @@ interface ZApiMessage {
   document?: { documentUrl?: string; fileName?: string; mimeType?: string };
   sticker?: { stickerUrl?: string };
   senderName?: string;
+  chatName?: string;
   senderPhoto?: string;
+  photo?: string;
   instanceId?: string;
   messageId?: string;
   type?: string;
@@ -125,10 +128,24 @@ async function handleWhatsApp(payload: unknown) {
 
   /* Z-API: mensagem recebida diretamente no root do payload */
   if (p.phone && !p.object) {
-    const phone  = p.phone ?? "desconhecido";
-    const name   = p.senderName ?? phone;
-    const ts     = p.momment ?? p.timestamp ?? Date.now();
+    const rawPhone = p.phone ?? "desconhecido";
+    // Alguns contatos com privacidade de número ativada retornam um LID
+    // ("18404815680435@lid") no campo phone em vez do telefone real — a
+    // Z-API não consegue resolver o número nesse caso. Marcamos para que
+    // o frontend não deixe enviar mensagem via API para esse pseudo-número.
+    const isLid  = rawPhone.includes("@lid") || rawPhone.includes("@");
+    const phone  = isLid ? rawPhone.replace(/@.*/, "") : rawPhone;
     const fromMe = p.fromMe ?? false;
+    // Quando fromMe=true, "senderName" é o nome de QUEM ENVIOU (você/sua instância) —
+    // usar isso como nome da conversa criava leads com o nome "Be Fluent | Suporte...".
+    // "chatName" é o nome do CONTATO/chat em ambos os casos — é o correto para exibir.
+    const name   = p.chatName ?? (fromMe ? phone : p.senderName ?? phone);
+    const ts     = p.momment ?? p.timestamp ?? Date.now();
+
+    console.log(`[WhatsApp/Z-API] payload bruto fromMe=${fromMe} isLid=${isLid}:`, JSON.stringify({
+      phone: p.phone, connectedPhone: p.connectedPhone, senderName: p.senderName,
+      chatName: p.chatName, fromMe: p.fromMe,
+    }));
 
     // Detecta tipo de mídia e extrai dados
     let msgType: "text" | "image" | "audio" | "document" | "video" = "text";
@@ -165,7 +182,7 @@ async function handleWhatsApp(payload: unknown) {
       text = "[Sticker]";
     }
 
-    const senderPhoto = p.senderPhoto ?? undefined;
+    const senderPhoto = p.senderPhoto ?? p.photo ?? undefined;
     console.log(`[WhatsApp/Z-API] ${fromMe ? "→ enviado" : "← recebido"} ${name} (${phone}): ${text}`);
 
     await pushMessage({
@@ -180,6 +197,7 @@ async function handleWhatsApp(payload: unknown) {
       mediaUrl,
       mediaCaption,
       fileName,
+      isLid,
       raw:          payload,
     });
 
