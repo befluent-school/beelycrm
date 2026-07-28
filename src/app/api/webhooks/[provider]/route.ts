@@ -5,6 +5,8 @@ import { exitFollowupOnReply } from "@/lib/followup-exit";
 import { resolveRecentChatPhone } from "@/lib/zapi-resolve";
 import { logWebhookPayload } from "@/app/api/debug/webhook-log/route";
 
+export const dynamic = "force-dynamic";
+
 type Ctx = { params: Promise<{ provider: string }> };
 
 /* ── Helpers de verificação de assinatura ───────────────────── */
@@ -69,8 +71,14 @@ export async function POST(request: Request, ctx: Ctx) {
   try { payload = JSON.parse(rawBody); } catch { payload = {}; }
 
   console.log(`[webhook:${provider}] payload:`, JSON.stringify(payload).slice(0, 500));
-  // Salva de verdade no log visível em /debug (antes só ia para o console do Render)
-  void logWebhookPayload({ provider, ...(typeof payload === "object" && payload ? payload : {}) });
+  // Salva de verdade no log visível em /debug (antes só ia para o console do Render).
+  // Aguarda explicitamente — em "fire-and-forget" (void) o processo pode encerrar
+  // a resposta HTTP antes do insert no Supabase terminar, perdendo o registro.
+  try {
+    await logWebhookPayload({ provider, ...(typeof payload === "object" && payload ? payload : {}) });
+  } catch (e) {
+    console.error(`[webhook:${provider}] falha ao salvar debug log:`, e);
+  }
 
   try {
     if (provider === "whatsapp")  await handleWhatsApp(payload);
