@@ -1,11 +1,11 @@
 export const SITE = {
   name: "Beely",
-  tagline: "O CRM que transforma conversas em vendas",
+  tagline: "CRM com inteligência comercial e Business Intelligence",
   description:
-    "Beely é a plataforma de CRM e vendas que centraliza leads, WhatsApp, Instagram e automações em um só lugar. Feche mais negócios com clareza e potência.",
+    "Beely é a plataforma de CRM e vendas que centraliza leads, pipeline, automações, remarketing e Business Intelligence em um só lugar. Decisões comerciais com dados, não com achismo.",
   // Obrigatório em todo o sistema:
   footerLegal: "Desenvolvido por Be Fluent Idiomas & Ensino LTDA.",
-  email: "contato@beely.app",
+  email: "befluentschooll@gmail.com",
 } as const;
 
 export type PlanId = "starter" | "pro" | "business" | "enterprise";
@@ -39,7 +39,7 @@ export const PLANS: Plan[] = [
       "Pipeline visual (Kanban)",
       "Gestão de contatos e leads",
       "Tarefas e atividades",
-      "Inbox WhatsApp (1 número)",
+      "Remarketing por e-mail (Gmail)",
       "Relatórios básicos",
       "Suporte por e-mail",
     ],
@@ -56,9 +56,9 @@ export const PLANS: Plan[] = [
     features: [
       "Tudo do Starter, mais:",
       "Automações e workflows",
-      "Instagram Direct + Messenger",
+      "Ligações com IA (voz)",
       "Lead scoring",
-      "Sequências de e-mail",
+      "Sequências de e-mail e remarketing",
       "Relatórios avançados",
       "API (somente leitura) + Webhooks",
       "Suporte prioritário",
@@ -70,7 +70,7 @@ export const PLANS: Plan[] = [
     price: 147,
     tagline: "Para operações comerciais que exigem performance.",
     highlight: "featured",
-    badge: "🔥 Melhor custo-benefício",
+    badge: "Melhor custo-benefício",
     cta: "Assinar Business",
     limits: { users: "Até 30 usuários", contacts: "100.000 contatos", pipelines: "Funis ilimitados", whatsapp: "10 números WhatsApp" },
     features: [
@@ -89,7 +89,7 @@ export const PLANS: Plan[] = [
     name: "Enterprise",
     price: 247,
     tagline: "Para empresas que precisam de escala e controle total.",
-    badge: "👑 Potência máxima",
+    badge: "Potência máxima",
     cta: "Falar com vendas",
     limits: { users: "Usuários ilimitados", contacts: "Contatos ilimitados", pipelines: "Funis ilimitados", whatsapp: "WhatsApp ilimitado" },
     features: [

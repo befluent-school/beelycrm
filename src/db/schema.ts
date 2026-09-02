@@ -21,6 +21,14 @@ export const channelTypeEnum = pgEnum("channel_type", ["whatsapp", "instagram", 
 export const channelProviderEnum = pgEnum("channel_provider", ["meta_cloud", "zapi", "evolution", "native"]);
 export const msgDirectionEnum = pgEnum("msg_direction", ["in", "out"]);
 
+/* ─── Remarketing (e-mail) & Ligações IA ─────────────────── */
+export const emailProviderEnum = pgEnum("email_provider", ["gmail", "resend"]);
+export const emailAccountStatusEnum = pgEnum("email_account_status", ["disconnected", "connected", "error"]);
+export const campaignStatusEnum = pgEnum("campaign_status", ["draft", "scheduled", "running", "paused", "done"]);
+export const emailSendStatusEnum = pgEnum("email_send_status", ["queued", "sent", "opened", "clicked", "bounced", "failed"]);
+export const callProviderEnum = pgEnum("call_provider", ["vapi", "twilio"]);
+export const callStatusEnum = pgEnum("call_status", ["queued", "ringing", "in_progress", "completed", "no_answer", "failed", "voicemail"]);
+
 /* ─── Tenancy ────────────────────────────────────────────── */
 export const organizations = pgTable("organizations", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -221,6 +229,127 @@ export const forms = pgTable("forms", {
   pipelineId: uuid("pipeline_id").references(() => pipelines.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+/* ─── Remarketing por e-mail ────────────────────────────── */
+export const emailAccounts = pgTable(
+  "email_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    provider: emailProviderEnum("provider").notNull().default("gmail"),
+    fromEmail: text("from_email").notNull(),
+    fromName: text("from_name"),
+    // Gmail: OAuth refresh token (long-lived). Resend: null (usa API key em env).
+    oauthRefreshToken: text("oauth_refresh_token"),
+    status: emailAccountStatusEnum("status").notNull().default("disconnected"),
+    lastError: text("last_error"),
+    connectedAt: timestamp("connected_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("email_accounts_org_idx").on(t.orgId)]
+);
+
+export const emailTemplates = pgTable(
+  "email_templates",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    subject: text("subject").notNull(),
+    bodyHtml: text("body_html").notNull(),
+    bodyText: text("body_text"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("email_templates_org_idx").on(t.orgId)]
+);
+
+export const emailCampaigns = pgTable(
+  "email_campaigns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    templateId: uuid("template_id").references(() => emailTemplates.id, { onDelete: "set null" }),
+    status: campaignStatusEnum("status").notNull().default("draft"),
+    // Filtro de audiência sobre contatos (origem, funil, status, tags, score mínimo…)
+    audienceFilter: jsonb("audience_filter").$type<Record<string, unknown>>().notNull().default({}),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
+    stats: jsonb("stats").$type<{ sent: number; opened: number; clicked: number; bounced: number; failed: number }>()
+      .notNull()
+      .default({ sent: 0, opened: 0, clicked: 0, bounced: 0, failed: 0 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("email_campaigns_org_idx").on(t.orgId)]
+);
+
+export const emailSends = pgTable(
+  "email_sends",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    campaignId: uuid("campaign_id").references(() => emailCampaigns.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+    toEmail: text("to_email").notNull(),
+    status: emailSendStatusEnum("status").notNull().default("queued"),
+    providerMessageId: text("provider_message_id"),
+    error: text("error"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    openedAt: timestamp("opened_at", { withTimezone: true }),
+    clickedAt: timestamp("clicked_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("email_sends_campaign_idx").on(t.campaignId),
+    index("email_sends_contact_idx").on(t.contactId),
+  ]
+);
+
+/* ─── Ligações com IA ───────────────────────────────────── */
+export const callCampaigns = pgTable(
+  "call_campaigns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    provider: callProviderEnum("provider").notNull().default("vapi"),
+    // Configuração do agente de voz: voice, firstMessage, systemPrompt, model…
+    assistantConfig: jsonb("assistant_config").$type<Record<string, unknown>>().notNull().default({}),
+    audienceFilter: jsonb("audience_filter").$type<Record<string, unknown>>().notNull().default({}),
+    status: campaignStatusEnum("status").notNull().default("draft"),
+    stats: jsonb("stats").$type<{ dialed: number; answered: number; completed: number; failed: number; totalCostCents: number; totalDurationSec: number }>()
+      .notNull()
+      .default({ dialed: 0, answered: 0, completed: 0, failed: 0, totalCostCents: 0, totalDurationSec: 0 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("call_campaigns_org_idx").on(t.orgId)]
+);
+
+export const callLogs = pgTable(
+  "call_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    campaignId: uuid("campaign_id").references(() => callCampaigns.id, { onDelete: "set null" }),
+    contactId: uuid("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+    provider: callProviderEnum("provider").notNull().default("vapi"),
+    providerCallId: text("provider_call_id"),
+    toNumber: text("to_number").notNull(),
+    status: callStatusEnum("status").notNull().default("queued"),
+    durationSec: integer("duration_sec").notNull().default(0),
+    costCents: integer("cost_cents").notNull().default(0),
+    recordingUrl: text("recording_url"),
+    transcript: jsonb("transcript").$type<{ role: string; text: string; at?: number }[]>().default([]),
+    summary: text("summary"),
+    endedReason: text("ended_reason"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("call_logs_campaign_idx").on(t.campaignId),
+    index("call_logs_contact_idx").on(t.contactId),
+    index("call_logs_provider_call_idx").on(t.providerCallId),
+  ]
+);
 
 /* ─── Integrations ──────────────────────────────────────── */
 export const apiKeys = pgTable("api_keys", {

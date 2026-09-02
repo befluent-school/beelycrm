@@ -293,7 +293,7 @@ function OperacionalTab() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Alerta (meta &gt; 80%)</span>
                   <span className={`font-semibold ${showRate >= 80 ? "text-green-400" : "text-red-400"}`}>
-                    {showRate >= 80 ? "✓ OK" : "⚠ Atenção"}
+                    {showRate >= 80 ? "OK" : "Atenção"}
                   </span>
                 </div>
               </div>

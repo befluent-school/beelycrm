@@ -26,7 +26,7 @@ export function GoogleButton() {
   return (
     <Button type="button" variant="outline" className="w-full gap-2" onClick={handleGoogle}>
       <GoogleIcon />
-      Continuar com Google
+      Entrar com Google
     </Button>
   );
 }

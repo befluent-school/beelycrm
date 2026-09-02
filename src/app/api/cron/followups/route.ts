@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getTemplates, logFollowupSent, renderTemplate } from "@/lib/followup-store";
 import { pushMessage } from "@/lib/message-store";
+import { getEmailProvider } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -148,18 +149,22 @@ async function sendWhatsApp(phone: string, text: string, contactName: string): P
 }
 
 async function sendEmail(to: string, subject: string, body: string): Promise<boolean> {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM_EMAIL ?? "no-reply@befluent.com.br";
-  if (!apiKey) return false;
+  // Usa o provedor de e-mail ativo do Beely (Gmail API por padrão, Resend como fallback).
+  const provider = await getEmailProvider();
+  if (!provider) return false;
   try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to, subject, text: body }),
-    });
+    const html = `<div style="font-family:Inter,Arial,sans-serif;font-size:15px;line-height:1.6;white-space:pre-wrap">${escapeHtml(body)}</div>`;
+    const res = await provider.sendEmail({ to, subject, html, text: body });
     return res.ok;
   } catch (e) {
-    console.error("[cron/followups] erro Resend:", e);
+    console.error("[cron/followups] erro ao enviar e-mail:", e);
     return false;
   }
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }

@@ -12,9 +12,10 @@ const PROTECTED = [
   "/contatos",
   "/empresas",
   "/pipeline",
-  "/inbox",
   "/atividades",
   "/automacoes",
+  "/remarketing",
+  "/ligacoes",
   "/relatorios",
   "/configuracoes",
 ];

@@ -26,18 +26,15 @@ export function SiteFooter({ minimal = false }: { minimal?: boolean }) {
         <FooterCol
           title="Produto"
           links={[
-            ["Funcionalidades", "/#features"],
-            ["Planos", "/#pricing"],
             ["Documentação", "/docs"],
             ["Integrações", "/docs/integracoes"],
+            ["Referência da API", "/docs/api"],
           ]}
         />
         <FooterCol
           title="Conta"
           links={[
             ["Entrar", "/login"],
-            ["Criar conta", "/signup"],
-            ["Teste grátis", "/signup"],
           ]}
         />
         <FooterCol

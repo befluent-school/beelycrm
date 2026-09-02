@@ -8,7 +8,7 @@ export default function IntegrationsDocs() {
   return (
     <>
       <DocTitle>Webhooks & Integrações</DocTitle>
-      <DocLead>Conecte o {SITE.name} a N8N, Zapier, Make e às suas ferramentas de mensageria.</DocLead>
+      <DocLead>Conecte o {SITE.name} ao Gmail (remarketing), Vapi (ligações com IA), analytics, pagamentos e automação.</DocLead>
 
       <DocH2 id="webhooks">Webhooks</DocH2>
       <DocP>
@@ -57,23 +57,29 @@ Headers:
   Content-Type: application/json
 Body: {{ $json.contato }}`}</DocCode>
 
-      <DocH2 id="canais">Conectar WhatsApp, Instagram e Messenger</DocH2>
+      <DocH2 id="remarketing">Remarketing por e-mail e Ligações com IA</DocH2>
       <DocP>
-        Em <strong>Configurações → Canais</strong>, escolha o canal e o provedor. Suportamos abordagem
-        híbrida — use a API oficial da Meta ou provedores alternativos:
+        <strong>Remarketing (Gmail API):</strong> em <strong>Integrações → Gmail</strong>, siga o guia para
+        criar as credenciais OAuth no Google Cloud Console, defina{" "}
+        <code className="rounded bg-secondary px-1 py-0.5 text-xs">GOOGLE_OAUTH_CLIENT_ID</code> e{" "}
+        <code className="rounded bg-secondary px-1 py-0.5 text-xs">GOOGLE_OAUTH_CLIENT_SECRET</code> no ambiente
+        e conecte a conta {SITE.email} em <strong>Remarketing → Conta de envio</strong>. Os e-mails são
+        enviados via <code className="rounded bg-secondary px-1 py-0.5 text-xs">gmail.users.messages.send</code>{" "}
+        com escopo <code className="rounded bg-secondary px-1 py-0.5 text-xs">gmail.send</code>. Abertura e
+        clique são rastreados por pixel e redirecionador próprios.
       </DocP>
-      <DocList
-        items={[
-          <><strong>WhatsApp:</strong> Meta Cloud API (oficial), Z-API ou Evolution API.</>,
-          <><strong>Instagram Direct:</strong> Instagram Graph API (conta Business).</>,
-          <><strong>Messenger:</strong> Meta Messenger Platform.</>,
-        ]}
-      />
       <DocP>
-        Para WhatsApp Cloud API, configure o webhook de verificação apontando para a URL abaixo e use o
-        token definido em <code className="rounded bg-secondary px-1 py-0.5 text-xs">WHATSAPP_VERIFY_TOKEN</code>:
+        <strong>Ligações com IA (Vapi):</strong> em <strong>Integrações → Vapi</strong>, informe a Private
+        API Key, o Phone Number ID e (opcional) o Assistant ID. Configure o Server URL do assistant/número
+        para a URL de webhook abaixo, com o mesmo segredo de{" "}
+        <code className="rounded bg-secondary px-1 py-0.5 text-xs">VAPI_WEBHOOK_SECRET</code>:
       </DocP>
-      <DocCode>{`https://app.beely.com/api/webhooks/whatsapp`}</DocCode>
+      <DocCode>{`https://app.beely.com/api/calls/webhook`}</DocCode>
+      <DocP>
+        As ligações são iniciadas via <code className="rounded bg-secondary px-1 py-0.5 text-xs">POST https://api.vapi.ai/call</code>{" "}
+        e o webhook normaliza os eventos <code>status-update</code> e <code>end-of-call-report</code> em
+        status, duração, custo, gravação, transcrição e resumo.
+      </DocP>
 
       <DocH2 id="zapier">Zapier & Make</DocH2>
       <DocP>

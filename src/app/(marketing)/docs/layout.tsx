@@ -13,7 +13,7 @@ const DOC_NAV = [
     items: [
       ["Contatos & Empresas", "/docs#contatos"],
       ["Pipeline & Negócios", "/docs#pipeline"],
-      ["Inbox omnichannel", "/docs#inbox"],
+      ["Business Intelligence", "/docs#bi"],
       ["Automações & Scoring", "/docs#automacoes"],
     ],
   },
@@ -21,8 +21,8 @@ const DOC_NAV = [
     title: "Desenvolvedores",
     items: [
       ["Referência da API", "/docs/api"],
-      ["Webhooks & N8N", "/docs/integracoes"],
-      ["Conectar WhatsApp/IG", "/docs/integracoes#canais"],
+      ["Integrações & Webhooks", "/docs/integracoes"],
+      ["Remarketing & Ligações IA", "/docs/integracoes#remarketing"],
     ],
   },
   {

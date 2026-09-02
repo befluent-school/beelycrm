@@ -708,7 +708,7 @@ export function SettingsView({ defaultTab = "geral" }: { defaultTab?: string }) 
                   size="sm" className="mt-4 w-full"
                   onClick={() => toast(p.id === "enterprise" ? "Você já está no plano Enterprise!" : "Em breve: upgrade de plano.")}
                 >
-                  {p.id === "enterprise" ? "Plano atual ✓" : "Fazer upgrade"}
+                  {p.id === "enterprise" ? "Plano atual" : "Fazer upgrade"}
                 </Button>
               </CardContent>
             </Card>

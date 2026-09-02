@@ -38,10 +38,11 @@ export default function DocsHome() {
         permite arrastar negócios entre etapas, e a previsão de receita é calculada automaticamente.
       </DocP>
 
-      <DocH2 id="inbox">Inbox omnichannel</DocH2>
+      <DocH2 id="bi">Business Intelligence</DocH2>
       <DocP>
-        WhatsApp, Instagram Direct e Messenger numa única caixa de entrada. Atribua conversas a
-        vendedores, use respostas rápidas e vincule cada conversa a um contato e negócio.
+        Indicadores executivos agrupados por Aquisição, Conversão, Receita e Velocidade: custo por lead,
+        taxa de conversão, forecast ponderado por probabilidade de etapa, ticket médio e tempo médio de
+        ciclo. Além de remarketing por e-mail e ligações com IA para reativação da base.
       </DocP>
 
       <DocH2 id="automacoes">Automações & Lead Scoring</DocH2>

@@ -31,7 +31,7 @@ export function ActivitiesView() {
           {hydrated && pending.map((a) => (
             <Row key={a.id} a={a} onToggle={() => toggleActivity(a.id)} onSave={(patch) => updateActivity(a.id, patch)} onDelete={() => { deleteActivity(a.id); toast("Atividade excluída."); }} />
           ))}
-          {hydrated && pending.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">Tudo em dia! 🎉</p>}
+          {hydrated && pending.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">Nenhuma pendência no momento.</p>}
         </CardContent>
       </Card>
 

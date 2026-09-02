@@ -451,7 +451,7 @@ export function AutomationsView() {
                     "mb-2 text-xs font-semibold uppercase tracking-wide",
                     cat === "positivo" ? "text-green-400" : "text-red-400"
                   )}>
-                    {cat === "positivo" ? "↑ Eventos positivos" : "↓ Eventos negativos"}
+                    {cat === "positivo" ? "Eventos positivos" : "Eventos negativos"}
                   </p>
                   <div className="space-y-1.5">
                     {SCORING_EVENTS.filter((e) => e.category === cat).map((ev) => {
@@ -525,10 +525,10 @@ export function AutomationsView() {
             <CardHeader><CardTitle>Classificação de leads por score</CardTitle></CardHeader>
             <CardContent className="space-y-2">
               {[
-                { label: "🔥 Quente",   range: "75 – 100", color: "bg-red-500/20 text-red-400 border-red-500/30",    desc: "Prioridade máxima — contatar imediatamente" },
-                { label: "🟡 Morno",    range: "40 – 74",  color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30", desc: "Em qualificação — nutrir com conteúdo" },
-                { label: "🔵 Frio",     range: "10 – 39",  color: "bg-blue-500/20 text-blue-400 border-blue-500/30",  desc: "Lead novo — iniciar sequência automática" },
-                { label: "⚫ Inativo",  range: "< 10",     color: "bg-secondary/50 text-muted-foreground border-border", desc: "Sem interação — reativar ou arquivar" },
+                { label: "Quente",   range: "75 – 100", color: "bg-red-500/20 text-red-400 border-red-500/30",    desc: "Prioridade máxima — contatar imediatamente" },
+                { label: "Morno",    range: "40 – 74",  color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30", desc: "Em qualificação — nutrir com conteúdo" },
+                { label: "Frio",     range: "10 – 39",  color: "bg-blue-500/20 text-blue-400 border-blue-500/30",  desc: "Lead novo — iniciar sequência automática" },
+                { label: "Inativo",  range: "< 10",     color: "bg-secondary/50 text-muted-foreground border-border", desc: "Sem interação — reativar ou arquivar" },
               ].map((tier) => (
                 <div key={tier.label} className={cn("flex items-center justify-between rounded-lg border px-4 py-3", tier.color)}>
                   <div>
