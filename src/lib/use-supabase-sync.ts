@@ -107,19 +107,27 @@ export function useSupabaseSync() {
         const snapshot = await loadAll();
 
         if (snapshot) {
-          // Banco tem dados — hidrata o store
+          // Banco tem dados — hidrata o store. Merge por id (não overwrite):
+          // se a página recarrega logo após uma importação em lote, os
+          // upserts de contacts/deals ainda podem estar em voo no Supabase —
+          // um overwrite puro aqui reproduziria, já no PRIMEIRO load da aba,
+          // o mesmo bug de "leads somem" que o refresh periódico já corrige
+          // depois de rodando. localStorage (já persistido pelo Zustand
+          // antes deste efeito rodar) é a fonte mais recente para o que
+          // ainda não confirmou no banco.
+          const cur = useStore.getState();
           useStore.setState({
             pipelines:         ensureComercialBfPipeline(snapshot.pipelines),
-            deals:             snapshot.deals,
-            contacts:          snapshot.contacts,
-            activities:        snapshot.activities,
-            companies:         snapshot.companies,
-            automations:       snapshot.automations,
-            scoringRules:      snapshot.scoringRules,
+            deals:             mergeById(cur.deals, snapshot.deals),
+            contacts:          mergeById(cur.contacts, snapshot.contacts),
+            activities:        mergeById(cur.activities, snapshot.activities),
+            companies:         mergeById(cur.companies, snapshot.companies),
+            automations:       mergeById(cur.automations, snapshot.automations),
+            scoringRules:      mergeById(cur.scoringRules, snapshot.scoringRules),
             connectedChannels: snapshot.connectedChannels,
             integrations:      snapshot.integrations,
             financialConfig:   snapshot.financialConfig,
-            sdrs:              snapshot.sdrs,
+            sdrs:              mergeById(cur.sdrs, snapshot.sdrs),
           });
           console.log("[sync] Store hidratado do Supabase");
           // Limpa flag antigo se existir (banco foi repopulado)

@@ -121,16 +121,26 @@ export async function GET() {
     }
 
     if (result.tables.deals?.exists) {
-      const testId = `__diagnostic_deal_${Date.now()}`;
-      const { error } = await anonClient.from("deals").insert({
-        id: testId, title: "__diagnostic__", value: 0, pipeline_id: "__diagnostic__", stage_id: "__diagnostic__", contact: "__diagnostic__", owner: "__diagnostic__",
-      });
-      if (error) {
-        result.anonWriteByTable.deals = { ok: false, error: error.message };
-        result.ok = false;
+      // Usa um pipeline/etapa reais (via service role) para não disparar falso
+      // negativo por violação de foreign key em vez de RLS.
+      const { data: realPipeline } = await supabase.from("pipelines").select("id, stages").limit(1).single();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const realStageId = Array.isArray(realPipeline?.stages) ? (realPipeline.stages as any[])[0]?.id : undefined;
+
+      if (!realPipeline || !realStageId) {
+        result.anonWriteByTable.deals = { ok: false, error: "sem pipeline/etapa real para testar (crie um funil primeiro)" };
       } else {
-        result.anonWriteByTable.deals = { ok: true };
-        await supabase.from("deals").delete().eq("id", testId);
+        const testId = `__diagnostic_deal_${Date.now()}`;
+        const { error } = await anonClient.from("deals").insert({
+          id: testId, title: "__diagnostic__", value: 0, pipeline_id: realPipeline.id, stage_id: realStageId, contact: "__diagnostic__", owner: "__diagnostic__",
+        });
+        if (error) {
+          result.anonWriteByTable.deals = { ok: false, error: error.message };
+          result.ok = false;
+        } else {
+          result.anonWriteByTable.deals = { ok: true };
+          await supabase.from("deals").delete().eq("id", testId);
+        }
       }
     }
   }
