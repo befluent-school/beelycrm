@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useStore } from "@/lib/store";
-import { loadAll, db } from "@/lib/db";
+import { loadAll, db, mergeById } from "@/lib/db";
 import type { DbSnapshot } from "@/lib/db";
 import { STAGES_COMERCIAL_BF, COMERCIAL_BF_PIPELINE_ID } from "@/lib/demo-data";
 
@@ -20,21 +20,6 @@ function ensureComercialBfPipeline(pipelines: DbSnapshot["pipelines"]): DbSnapsh
   };
   void db.upsertPipeline(bf);
   return [...pipelines, bf];
-}
-
-/**
- * Une uma lista local com a versão vinda do Supabase por id, SEM nunca
- * descartar um registro que só existe localmente — essencial para o
- * refresh periódico não apagar dados recém-criados (ex.: leads importados
- * em lote) cujo upsert no Supabase ainda está em voo quando o refresh
- * dispara. O snapshot remoto vence quando o id já existe dos dois lados
- * (ele é o source of truth para edições), mas nunca remove um item
- * local-only — só uma exclusão explícita (delete*) tira algo da lista.
- */
-function mergeById<T extends { id: string }>(local: T[], remote: T[]): T[] {
-  const remoteIds = new Set(remote.map((r) => r.id));
-  const localOnly = local.filter((l) => !remoteIds.has(l.id));
-  return [...remote, ...localOnly];
 }
 
 /**

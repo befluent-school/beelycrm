@@ -369,6 +369,22 @@ const DEFAULT_FINANCIAL: FinancialConfig = {
   dailyTargets: { ...DEFAULT_DAILY_TARGETS },
 };
 
+/**
+ * Une uma lista local com a versão vinda do Supabase por id, SEM nunca
+ * descartar um registro que só existe localmente — essencial para um
+ * refresh (periódico, manual, ou de visibilidade da aba) não apagar dados
+ * recém-criados (ex.: leads importados em lote) cujo upsert no Supabase
+ * ainda está em voo quando o refresh dispara. O snapshot remoto vence
+ * quando o id já existe dos dois lados (é o source of truth para edições),
+ * mas nunca remove um item local-only — só uma exclusão explícita
+ * (delete*) tira algo da lista.
+ */
+export function mergeById<T extends { id: string }>(local: T[], remote: T[]): T[] {
+  const remoteIds = new Set(remote.map((r) => r.id));
+  const localOnly = local.filter((l) => !remoteIds.has(l.id));
+  return [...remote, ...localOnly];
+}
+
 export async function loadAll(): Promise<DbSnapshot | null> {
   try {
     const [

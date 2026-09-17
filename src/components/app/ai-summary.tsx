@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { useStore, useHydrated, type Deal, type Contact } from "@/lib/store";
+import { loadAll, mergeById } from "@/lib/db";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, cn } from "@/lib/utils";
-import { Sparkles, TrendingUp, AlertTriangle, Trophy, Target, RefreshCw } from "lucide-react";
+import { Sparkles, TrendingUp, AlertTriangle, Trophy, Target, RefreshCw, Loader2 } from "lucide-react";
 
 interface Insight {
   icon: React.ComponentType<{ className?: string }>;
@@ -97,7 +99,26 @@ function generate(deals: Deal[], contacts: Contact[]): { headline: string; narra
 export function AiSummary() {
   const hydrated = useHydrated();
   const { deals, contacts } = useStore();
-  const [, force] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      const fresh = await loadAll();
+      if (fresh) {
+        const cur = useStore.getState();
+        useStore.setState({
+          deals: mergeById(cur.deals, fresh.deals),
+          contacts: mergeById(cur.contacts, fresh.contacts),
+        });
+        toast.success("Análise atualizada com os dados mais recentes.");
+      }
+    } catch {
+      toast.error("Não foi possível buscar dados novos agora.");
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   if (!hydrated) {
     return (
@@ -134,8 +155,8 @@ export function AiSummary() {
               <h3 className="font-display text-lg font-bold">{headline}</h3>
             </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => force((n) => n + 1)} title="Atualizar análise">
-            <RefreshCw className="size-4" />
+          <Button variant="ghost" size="icon" onClick={handleRefresh} disabled={refreshing} title="Atualizar análise com os dados mais recentes">
+            {refreshing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
           </Button>
         </div>
 
