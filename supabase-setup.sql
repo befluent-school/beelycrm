@@ -85,6 +85,37 @@ create index if not exists inbox_messages_thread_idx on inbox_messages (thread_k
 create index if not exists inbox_messages_sdr_idx on inbox_messages (sdr_id);
 create index if not exists inbox_messages_timestamp_idx on inbox_messages (timestamp);
 
+-- 7) RLS (Row Level Security) — CAUSA RAIZ do "SDR não salva".
+--    O Beely faz as mutações do CRM (contacts, deals, sdrs, etc.) direto do
+--    NAVEGADOR usando a anon key (NEXT_PUBLIC_SUPABASE_ANON_KEY) — é assim
+--    que o app inteiro sempre funcionou, sem tabela de policy nenhuma. Tabelas
+--    antigas (deals, contacts, pipelines...) provavelmente foram criadas sem
+--    RLS habilitado. A tabela "sdrs" é nova — se o Supabase ligou RLS nela
+--    por padrão (comportamento comum em projetos recentes), a anon key fica
+--    SEM PERMISSÃO NENHUMA de escrever, e o INSERT falha silenciosamente
+--    (o app engolia esse erro; agora já loga, mas o problema é este aqui).
+--    Desabilita RLS nas tabelas novas do Inbox multi-SDR e do Playbook,
+--    alinhando com o padrão (sem RLS) do resto do banco.
+alter table sdrs disable row level security;
+alter table inbox_messages disable row level security;
+alter table conversation_assignments disable row level security;
+
+-- Se as tabelas abaixo existirem (Playbook Comercial Be Fluent v3 / módulos
+-- de e-mail e ligações), garante o mesmo padrão — idempotente, não falha se
+-- a tabela ainda não existir.
+do $$
+begin
+  if to_regclass('public.followup_playbook_templates') is not null then
+    execute 'alter table followup_playbook_templates disable row level security';
+  end if;
+  if to_regclass('public.followup_playbook_log') is not null then
+    execute 'alter table followup_playbook_log disable row level security';
+  end if;
+  if to_regclass('public.stage_benchmarks') is not null then
+    execute 'alter table stage_benchmarks disable row level security';
+  end if;
+end $$;
+
 -- ============================================================
 -- Depois de rodar este script, acesse (no navegador, logado no app):
 --   https://SEU-APP.onrender.com/api/debug/supabase-status

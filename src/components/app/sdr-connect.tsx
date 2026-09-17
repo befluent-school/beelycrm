@@ -163,6 +163,10 @@ export function SdrConnect({
       const sdrsTable = data?.tables?.sdrs;
       if (sdrsTable && sdrsTable.exists === false) {
         toast.error("O SDR foi salvo só no seu navegador — a tabela \"sdrs\" não existe no Supabase. Rode supabase-setup.sql no SQL Editor.", { duration: 8000 });
+        return;
+      }
+      if (data?.anonWrite && data.anonWrite.ok === false) {
+        toast.error("O SDR foi salvo só no seu navegador — o Supabase está bloqueando a gravação (RLS sem policy na tabela \"sdrs\"). Rode a seção 7 do supabase-setup.sql atualizado no SQL Editor.", { duration: 10000 });
       }
     } catch {
       /* diagnóstico best-effort, não bloqueia o fluxo */
