@@ -23,15 +23,23 @@ function ensureComercialBfPipeline(pipelines: DbSnapshot["pipelines"]): DbSnapsh
 }
 
 /**
- * Hidrata o store Zustand com dados do Supabase na inicialização.
- * Também mantém o Render free tier ativo via keep-alive a cada 10 min.
+ * Hidrata o store Zustand com dados do Supabase na inicialização, e mantém
+ * refrescando periodicamente — sem isso, uma aba aberta (ou navegação só
+ * client-side dentro da SPA, sem reload) ficava com o dashboard/CRM inteiro
+ * congelado nos dados do primeiro carregamento daquela aba: nenhum negócio
+ * novo, nenhuma virada de mês, nada, até um F5 manual. Também mantém o
+ * Render free tier ativo via keep-alive a cada 10 min.
  *
  * Fluxo:
  * 1. Aguarda hidratação do localStorage (Zustand persist)
  * 2. Chama loadAll() — tenta carregar dados do Supabase
  * 3. Se banco tem dados → hidrata store (Supabase vira source of truth)
  * 4. Se banco vazio → envia snapshot do localStorage para /api/migrate
+ * 5. Repete o passo 2/3 a cada REFRESH_MS e sempre que a aba volta a ficar
+ *    visível (troca de aba, minimizar/restaurar, computador voltando do sleep).
  */
+const REFRESH_MS = 2 * 60 * 1000; // 2 min
+
 export function useSupabaseSync() {
   const synced = useRef(false);
 
@@ -41,11 +49,45 @@ export function useSupabaseSync() {
       fetch("/api/ping").catch(() => {/* silencioso */});
     }, 10 * 60 * 1000);
 
-    if (synced.current) return () => clearInterval(keepAlive);
-    synced.current = true;
-
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     if (!supabaseUrl) return () => clearInterval(keepAlive);
+
+    /** Refresco leve: só relê o Supabase e atualiza o store — sem lógica de migração. */
+    const refresh = async () => {
+      try {
+        const fresh = await loadAll();
+        if (fresh) {
+          useStore.setState({
+            pipelines:         ensureComercialBfPipeline(fresh.pipelines),
+            deals:             fresh.deals,
+            contacts:          fresh.contacts,
+            activities:        fresh.activities,
+            companies:         fresh.companies,
+            automations:       fresh.automations,
+            scoringRules:      fresh.scoringRules,
+            connectedChannels: fresh.connectedChannels,
+            integrations:      fresh.integrations,
+            financialConfig:   fresh.financialConfig,
+            sdrs:              fresh.sdrs,
+          });
+        }
+      } catch (e) {
+        console.error("[sync] Falha ao refrescar dados do Supabase:", e);
+      }
+    };
+
+    const refreshInterval = setInterval(refresh, REFRESH_MS);
+    const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+
+    if (synced.current) {
+      return () => {
+        clearInterval(keepAlive);
+        clearInterval(refreshInterval);
+        document.removeEventListener("visibilitychange", onVisible);
+      };
+    }
+    synced.current = true;
 
     const run = async () => {
       try {
@@ -145,6 +187,10 @@ export function useSupabaseSync() {
       });
     }
 
-    return () => clearInterval(keepAlive);
+    return () => {
+      clearInterval(keepAlive);
+      clearInterval(refreshInterval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 }

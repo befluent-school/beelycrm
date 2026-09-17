@@ -134,19 +134,27 @@ export function InboxView() {
     for (const m of scopedMessages) {
       const key = m.threadKey ?? `${m.sdrId}:${m.from}`;
       const existing = byThread.get(key);
+      // Mensagens fromMe (enviadas pelo SDR, seja via Beely ou eco do celular)
+      // não carregam o nome/foto real do WhatsApp do lead — fromName nessas
+      // vem só o telefone. Nunca deixa uma mensagem fromMe "degradar" um
+      // nome/foto real já visto em mensagem recebida do lead na mesma thread.
+      const isRealIdentity = !m.fromMe && !!m.fromName && m.fromName !== m.from;
+      const bestName = isRealIdentity ? m.fromName : existing?.contactName ?? (m.fromName || m.from);
+      const bestPhoto = (!m.fromMe && m.senderPhoto) || existing?.contactPhoto;
       if (!existing || m.timestamp >= existing.lastTimestamp) {
         byThread.set(key, {
           threadKey: key, sdrId: m.sdrId, phone: m.from,
-          contactName: m.fromName || m.from,
-          contactPhoto: m.senderPhoto || existing?.contactPhoto,
+          contactName: bestName,
+          contactPhoto: bestPhoto,
           lastText: m.text,
           lastTimestamp: m.timestamp, lastFromMe: m.fromMe ?? false,
           unread: existing?.unread ?? 0,
         });
-      } else if (m.senderPhoto && !existing.contactPhoto) {
-        // Mensagens fromMe (enviadas por nós) não carregam senderPhoto do lead —
-        // preserva a foto já vista em outra mensagem da mesma thread.
-        existing.contactPhoto = m.senderPhoto;
+      } else if (isRealIdentity || m.senderPhoto) {
+        // Mensagem mais antiga que a última, mas ainda traz identidade real
+        // que a thread atual não tinha — preenche sem sobrescrever a prévia.
+        if (isRealIdentity && (existing.contactName === existing.phone)) existing.contactName = m.fromName;
+        if (m.senderPhoto && !existing.contactPhoto) existing.contactPhoto = m.senderPhoto;
       }
     }
     const lastOut = new Map<string, number>();
