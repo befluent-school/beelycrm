@@ -12,7 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { CopyField } from "./copy-field";
 import { ChannelConnect } from "./channel-connect";
-import { Webhook, KeyRound, Plus, Trash2, RefreshCw, Eye, EyeOff, UserPlus, Mail, Shield, Crown, MoreHorizontal, Pencil, UserMinus, Check } from "lucide-react";
+import { SdrConnect } from "./sdr-connect";
+import { Webhook, KeyRound, Plus, Trash2, RefreshCw, Eye, EyeOff, UserPlus, Mail, Shield, Crown, MoreHorizontal, Pencil, UserMinus, Check, MessageSquare } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 /* ── Logos SVG oficiais dos canais ──────────────────────────── */
@@ -59,7 +60,7 @@ function MessengerLogo({ className }: { className?: string }) {
 }
 import { PLANS } from "@/lib/site";
 import { formatCurrency, cn } from "@/lib/utils";
-import { useStore, useHydrated } from "@/lib/store";
+import { useStore, useHydrated, type Sdr } from "@/lib/store";
 import { DollarSign, TrendingUp, Users, BarChart2, HelpCircle } from "lucide-react";
 
 /* ── Tipos de perfil / membro ──────────────────────────────── */
@@ -385,12 +386,17 @@ const SEED_MEMBERS: TeamMember[] = [
 export function SettingsView({ defaultTab = "geral" }: { defaultTab?: string }) {
   const hydrated          = useHydrated();
   const connectedChannels = useStore((s) => s.connectedChannels);
+  const sdrs               = useStore((s) => s.sdrs);
 
   const [apiKeys, setApiKeys]           = useState<ApiKey[]>(INITIAL_KEYS);
   const [newKey, setNewKey]             = useState<string | null>(null);
   const [generatingKey, setGenerating]  = useState(false);
   const [webhooks, setWebhooks]         = useState<WebhookDef[]>(INITIAL_WEBHOOKS);
   const [showNewWH, setShowNewWH]       = useState(false);
+
+  /* SDRs & WhatsApp */
+  const [sdrConnectOpen, setSdrConnectOpen] = useState(false);
+  const [editingSdr, setEditingSdr]         = useState<Sdr | null>(null);
 
   /* Equipe */
   const [members, setMembers]           = useState<TeamMember[]>(SEED_MEMBERS);
@@ -453,6 +459,7 @@ export function SettingsView({ defaultTab = "geral" }: { defaultTab?: string }) 
         <TabsTrigger value="geral">Geral</TabsTrigger>
         <TabsTrigger value="integracoes">Integrações</TabsTrigger>
         <TabsTrigger value="canais">Canais</TabsTrigger>
+        <TabsTrigger value="sdrs">SDRs &amp; WhatsApp</TabsTrigger>
         <TabsTrigger value="equipe">Equipe</TabsTrigger>
         <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
         <TabsTrigger value="planos">Planos</TabsTrigger>
@@ -633,6 +640,62 @@ export function SettingsView({ defaultTab = "geral" }: { defaultTab?: string }) 
             );
           })}
         </div>
+      </TabsContent>
+
+      {/* ─── SDRs & WhatsApp ───────────────────────────────────── */}
+      <TabsContent value="sdrs" className="space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Cada SDR atende pelo próprio número de WhatsApp Business (Z-API ou Meta Cloud API).
+            Conversas e leads aparecem no Inbox separados por SDR.
+          </p>
+          <Button size="sm" onClick={() => { setEditingSdr(null); setSdrConnectOpen(true); }}>
+            <Plus className="size-4" /> Novo SDR
+          </Button>
+        </div>
+
+        {hydrated && sdrs.length === 0 && (
+          <Card>
+            <CardContent className="flex flex-col items-center gap-2 p-8 text-center">
+              <MessageSquare className="size-8 text-muted-foreground" />
+              <p className="text-sm font-medium">Nenhum SDR cadastrado ainda</p>
+              <p className="text-xs text-muted-foreground">Adicione o primeiro SDR e conecte o WhatsApp Business dele.</p>
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="grid gap-4 md:grid-cols-3">
+          {hydrated && sdrs.map((sdr) => (
+            <Card key={sdr.id} className={sdr.active ? "border-success/30 bg-success/[0.03]" : ""}>
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between">
+                  <span
+                    className="flex size-11 items-center justify-center rounded-xl text-sm font-semibold text-white"
+                    style={{ background: sdr.avatarColor || "#E59313" }}
+                  >
+                    {sdr.name.slice(0, 1).toUpperCase()}
+                  </span>
+                  <Badge variant={sdr.active ? "success" : "outline"}>{sdr.active ? "Ativo" : "Pausado"}</Badge>
+                </div>
+                <p className="mt-3 font-display font-semibold">{sdr.name}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{sdr.phoneDisplay || "Sem número exibido"}</p>
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  {sdr.waProvider === "meta_cloud"
+                    ? (sdr.metaPhoneNumberId ? "Meta Cloud API conectada" : "Meta Cloud API — pendente")
+                    : (sdr.zapiInstanceId ? "Z-API conectada" : "Z-API — pendente")}
+                </p>
+                <Button
+                  variant="outline" size="sm" className="mt-4 w-full"
+                  onClick={() => { setEditingSdr(sdr); setSdrConnectOpen(true); }}
+                >
+                  Gerenciar
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <SdrConnect sdr={editingSdr} open={sdrConnectOpen} onOpenChange={setSdrConnectOpen} />
       </TabsContent>
 
       {/* ─── Equipe ────────────────────────────────────────────── */}
@@ -936,9 +999,44 @@ function FinancialConfigTab() {
             </div>
           </div>
 
+          {/* Playbook Comercial Be Fluent v3 — SLA e metas diárias */}
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+              <BarChart2 className="size-3.5" /> Playbook Comercial — SLA e metas diárias
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FinInput
+                label="SLA alvo de resposta (min)"
+                tip="Playbook Seção 2 — tempo máximo entre o lead entrar e o 1º contato humano. Padrão: 4."
+                value={cfg.slaTargetMinutes}
+                onChange={(v) => setCfg((c) => ({ ...c, slaTargetMinutes: v }))}
+              />
+            </div>
+            <p className="mt-3 mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Metas diárias por função (Seção 11.2)</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FinInput label="Leads contatados em 4 min/dia" tip="~1-2/dia (30 leads/mês ÷ 22 dias úteis)"
+                value={cfg.dailyTargets.leadsContacted}
+                onChange={(v) => setCfg((c) => ({ ...c, dailyTargets: { ...c.dailyTargets, leadsContacted: v } }))} />
+              <FinInput label="Reativação de base fria/dia" tip="~10-15/dia zera o backlog em ~2 semanas"
+                value={cfg.dailyTargets.coldReactivations}
+                onChange={(v) => setCfg((c) => ({ ...c, dailyTargets: { ...c.dailyTargets, coldReactivations: v } }))} />
+              <FinInput label="Reuniões de diagnóstico/dia" tip="Meta inicial 1-2/dia, ajustar conforme volume de qualificados"
+                value={cfg.dailyTargets.diagnosisMeetings}
+                onChange={(v) => setCfg((c) => ({ ...c, dailyTargets: { ...c.dailyTargets, diagnosisMeetings: v } }))} />
+              <FinInput label="Follow-ups executados/dia" tip="0 = 100% dos agendados (sem meta numérica fixa)"
+                value={cfg.dailyTargets.followupsExecuted}
+                onChange={(v) => setCfg((c) => ({ ...c, dailyTargets: { ...c.dailyTargets, followupsExecuted: v } }))} />
+              <FinInput label="Prospecção B2B ativa/dia" tip="3-5 novos contatos (LinkedIn/e-mail/Instagram)"
+                value={cfg.dailyTargets.b2bProspects}
+                onChange={(v) => setCfg((c) => ({ ...c, dailyTargets: { ...c.dailyTargets, b2bProspects: v } }))} />
+            </div>
+          </div>
+
           <Button onClick={save} className="w-full gap-2">
             {saved ? <><Check className="size-4" /> Salvo!</> : <><DollarSign className="size-4" /> Salvar configuracoes</>}
           </Button>
+
+          <StageBenchmarkEditor />
 
           <div className="rounded-lg border border-border bg-white/[0.02] p-3 text-xs text-muted-foreground space-y-1">
             <p className="font-semibold text-foreground/70">Como os cálculos são feitos:</p>
@@ -952,6 +1050,71 @@ function FinancialConfigTab() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/* ── Editor de benchmarks de conversão por etapa — Playbook 8.1 / 8.4 ── */
+function StageBenchmarkEditor() {
+  const { pipelines, stageBenchmarks, setStageBenchmark, resetStageBenchmarks } = useStore();
+  const bfPipeline = pipelines.find((p) => p.name.toLowerCase().includes("be fluent")) ?? pipelines[0];
+  const bench = new Map(stageBenchmarks.map((b) => [b.stageId, b]));
+
+  // Etapas de avanço (exclui a de fechamento final e a de perdido).
+  const stages = (bfPipeline?.stages ?? []).filter((s) => !/perdido|frio/i.test(s.name)).slice(0, -1);
+  if (stages.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <BarChart2 className="size-4 text-primary" /> Benchmarks de conversão por etapa
+        </CardTitle>
+        <CardDescription>
+          Referência (etapa → próxima) e piso de alerta do Playbook Seção 8.1. Ponto de partida —
+          recalibrar após 60 dias de dado real (8.4). Usado nos Relatórios e na retrospectiva semanal.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-xs text-muted-foreground">
+              <th className="py-2 font-medium">Etapa → próxima</th>
+              <th className="py-2 text-center font-medium">Meta (%)</th>
+              <th className="py-2 text-center font-medium">Piso (%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stages.map((s) => {
+              const b = bench.get(s.id);
+              return (
+                <tr key={s.id} className="border-b border-border last:border-0">
+                  <td className="py-2 font-medium">{s.name}</td>
+                  <td className="py-2 text-center">
+                    <Input
+                      type="number" min="0" max="100"
+                      value={b?.expectedConversionPct ?? 50}
+                      onChange={(e) => setStageBenchmark(s.id, { expectedConversionPct: Number(e.target.value) || 0 })}
+                      className="mx-auto h-8 w-20 text-center text-sm"
+                    />
+                  </td>
+                  <td className="py-2 text-center">
+                    <Input
+                      type="number" min="0" max="100"
+                      value={b?.alertFloorPct ?? 40}
+                      onChange={(e) => setStageBenchmark(s.id, { alertFloorPct: Number(e.target.value) || 0 })}
+                      className="mx-auto h-8 w-20 text-center text-sm"
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <Button variant="ghost" size="sm" className="mt-3" onClick={() => { resetStageBenchmarks(); toast.success("Benchmarks restaurados ao padrão do Playbook."); }}>
+          <RefreshCw className="size-3.5" /> Restaurar padrão do Playbook
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

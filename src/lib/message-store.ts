@@ -23,7 +23,23 @@ export interface InboxMessage {
   // contato com privacidade ativada). Não é possível enviar mensagem via
   // API para esse identificador, só visualizar o histórico recebido.
   isLid?: boolean;
+  // Inbox multi-SDR: a que SDR/instância pertence esta conversa, e a chave
+  // de agrupamento da thread (sdrId:phone, ou só phone no modo legado).
+  sdrId?: string;
+  threadKey?: string;
   raw?: unknown;
+}
+
+/** Resumo agregado de uma conversa — usado na lista do Inbox. */
+export interface ThreadSummary {
+  threadKey: string;
+  sdrId?: string;
+  phone: string;
+  contactName: string;
+  lastText: string;
+  lastTimestamp: number;
+  lastFromMe: boolean;
+  unread: number;
 }
 
 function getClient() {
@@ -55,6 +71,8 @@ async function ensureSchema(client: any) {
     "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS media_caption TEXT",
     "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS file_name TEXT",
     "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS is_lid BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS sdr_id TEXT",
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS thread_key TEXT",
   ];
   for (const sql of cols) {
     await client.rpc("exec_sql", { sql }).catch(() => null);
@@ -62,8 +80,11 @@ async function ensureSchema(client: any) {
 }
 
 export async function pushMessage(msg: Omit<InboxMessage, "id">): Promise<InboxMessage> {
+  // threadKey default: agrupa por SDR+telefone (multi-SDR) ou só telefone (legado).
+  const threadKey = msg.threadKey ?? (msg.sdrId ? `${msg.sdrId}:${msg.from}` : msg.from);
   const full: InboxMessage = {
     ...msg,
+    threadKey,
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     raw: undefined,
   };
@@ -90,6 +111,8 @@ export async function pushMessage(msg: Omit<InboxMessage, "id">): Promise<InboxM
       media_caption: full.mediaCaption ?? null,
       file_name:     full.fileName ?? null,
       is_lid:        full.isLid ?? false,
+      sdr_id:        full.sdrId ?? null,
+      thread_key:    full.threadKey ?? null,
     });
     if (error) {
       console.error("[message-store] erro ao salvar no Supabase:", error.message);
@@ -132,13 +155,15 @@ export async function getRecentMessages(since?: number): Promise<InboxMessage[]>
       mediaCaption: r.media_caption ?? undefined,
       fileName:     r.file_name ?? undefined,
       isLid:        r.is_lid ?? false,
+      sdrId:        r.sdr_id ?? undefined,
+      threadKey:    r.thread_key ?? (r.sdr_id ? `${r.sdr_id}:${r.from}` : r.from),
     };
   }
 
   try {
     let query = client
       .from("inbox_messages")
-      .select("id, channel, from, from_name, text, timestamp, from_me, sender_photo, msg_type, media_url, media_caption, file_name, is_lid")
+      .select("id, channel, from, from_name, text, timestamp, from_me, sender_photo, msg_type, media_url, media_caption, file_name, is_lid, sdr_id, thread_key")
       .order("timestamp", { ascending: false })
       .limit(200);
     if (since && since > 0) query = query.gt("timestamp", since);
@@ -173,6 +198,53 @@ export async function getRecentMessages(since?: number): Promise<InboxMessage[]>
 
 export async function getAllMessages(): Promise<InboxMessage[]> {
   return getRecentMessages();
+}
+
+/**
+ * Conversas agrupadas por thread (sdrId+telefone), com resumo da última
+ * mensagem — usado pela lista do Inbox. Agrega client-side sobre
+ * getRecentMessages() para reaproveitar o caminho de leitura já validado
+ * (com seus fallbacks de schema) em vez de duplicar a lógica em SQL.
+ */
+export async function getThreads(): Promise<ThreadSummary[]> {
+  const messages = await getAllMessages();
+  const byThread = new Map<string, ThreadSummary>();
+
+  for (const m of messages) {
+    const key = m.threadKey ?? (m.sdrId ? `${m.sdrId}:${m.from}` : m.from);
+    const existing = byThread.get(key);
+    if (!existing || m.timestamp >= existing.lastTimestamp) {
+      byThread.set(key, {
+        threadKey: key,
+        sdrId: m.sdrId,
+        phone: m.from,
+        contactName: m.fromName || m.from,
+        lastText: m.text,
+        lastTimestamp: m.timestamp,
+        lastFromMe: m.fromMe ?? false,
+        unread: existing?.unread ?? 0,
+      });
+    }
+  }
+
+  // Não lidas: mensagens recebidas (fromMe=false) mais recentes que a última enviada por nós.
+  const lastOutByThread = new Map<string, number>();
+  for (const m of messages) {
+    if (!m.fromMe) continue;
+    const key = m.threadKey ?? (m.sdrId ? `${m.sdrId}:${m.from}` : m.from);
+    lastOutByThread.set(key, Math.max(lastOutByThread.get(key) ?? 0, m.timestamp));
+  }
+  for (const m of messages) {
+    if (m.fromMe) continue;
+    const key = m.threadKey ?? (m.sdrId ? `${m.sdrId}:${m.from}` : m.from);
+    const lastOut = lastOutByThread.get(key) ?? 0;
+    if (m.timestamp > lastOut) {
+      const t = byThread.get(key);
+      if (t) t.unread += 1;
+    }
+  }
+
+  return [...byThread.values()].sort((a, b) => b.lastTimestamp - a.lastTimestamp);
 }
 
 /**

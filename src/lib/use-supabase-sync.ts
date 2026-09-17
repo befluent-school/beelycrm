@@ -2,8 +2,25 @@
 
 import { useEffect, useRef } from "react";
 import { useStore } from "@/lib/store";
-import { loadAll } from "@/lib/db";
+import { loadAll, db } from "@/lib/db";
 import type { DbSnapshot } from "@/lib/db";
+import { STAGES_COMERCIAL_BF, COMERCIAL_BF_PIPELINE_ID } from "@/lib/demo-data";
+
+/**
+ * Garante que o "Funil Comercial Be Fluent" (Playbook v3, 8 etapas) exista.
+ * Aditivo: se ausente na lista vinda do Supabase, anexa e persiste. Nunca
+ * remove ou altera funis existentes.
+ */
+function ensureComercialBfPipeline(pipelines: DbSnapshot["pipelines"]): DbSnapshot["pipelines"] {
+  if (pipelines.some((p) => p.id === COMERCIAL_BF_PIPELINE_ID)) return pipelines;
+  const bf = {
+    id: COMERCIAL_BF_PIPELINE_ID,
+    name: "Funil Comercial Be Fluent",
+    stages: STAGES_COMERCIAL_BF.map((s) => ({ ...s })),
+  };
+  void db.upsertPipeline(bf);
+  return [...pipelines, bf];
+}
 
 /**
  * Hidrata o store Zustand com dados do Supabase na inicialização.
@@ -32,12 +49,17 @@ export function useSupabaseSync() {
 
     const run = async () => {
       try {
+        // Garante (aditivamente) o schema do Playbook Comercial Be Fluent v3 e do
+        // Inbox multi-SDR. Idempotente; falha silenciosa não bloqueia a sincronização.
+        fetch("/api/playbook/init-schema").catch(() => {/* silencioso */});
+        fetch("/api/inbox/init-schema").catch(() => {/* silencioso */});
+
         const snapshot = await loadAll();
 
         if (snapshot) {
           // Banco tem dados — hidrata o store
           useStore.setState({
-            pipelines:         snapshot.pipelines,
+            pipelines:         ensureComercialBfPipeline(snapshot.pipelines),
             deals:             snapshot.deals,
             contacts:          snapshot.contacts,
             activities:        snapshot.activities,
@@ -47,6 +69,7 @@ export function useSupabaseSync() {
             connectedChannels: snapshot.connectedChannels,
             integrations:      snapshot.integrations,
             financialConfig:   snapshot.financialConfig,
+            sdrs:              snapshot.sdrs,
           });
           console.log("[sync] Store hidratado do Supabase");
           // Limpa flag antigo se existir (banco foi repopulado)
@@ -71,6 +94,7 @@ export function useSupabaseSync() {
             connectedChannels: state.connectedChannels,
             integrations:      state.integrations,
             financialConfig:   state.financialConfig,
+            sdrs:              state.sdrs,
           };
 
           const res = await fetch("/api/migrate", {
@@ -89,7 +113,7 @@ export function useSupabaseSync() {
             const fresh = await loadAll();
             if (fresh) {
               useStore.setState({
-                pipelines:         fresh.pipelines,
+                pipelines:         ensureComercialBfPipeline(fresh.pipelines),
                 deals:             fresh.deals,
                 contacts:          fresh.contacts,
                 activities:        fresh.activities,
@@ -99,6 +123,7 @@ export function useSupabaseSync() {
                 connectedChannels: fresh.connectedChannels,
                 integrations:      fresh.integrations,
                 financialConfig:   fresh.financialConfig,
+                sdrs:              fresh.sdrs,
               });
               console.log("[sync] Store re-hidratado após migração");
             }

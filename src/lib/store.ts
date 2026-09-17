@@ -3,7 +3,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { useSyncExternalStore } from "react";
-import { STAGES, DEALS, CONTACTS, ACTIVITIES, DEMO_USER } from "@/lib/demo-data";
+import {
+  STAGES, STAGES_COMERCIAL_BF, COMERCIAL_BF_PIPELINE_ID, STAGE_BENCHMARKS_BF,
+  DEALS, CONTACTS, ACTIVITIES, DEMO_USER,
+} from "@/lib/demo-data";
 import { db } from "@/lib/db";
 
 export interface Stage {
@@ -33,6 +36,17 @@ export interface Deal {
   createdAt: string;
   stageEnteredAt?: string;  // quando entrou na etapa atual (para calcular temperatura)
   history?: { ts: string; text: string }[];
+
+  /* ── Playbook Comercial Be Fluent v3 (campos aditivos) ── */
+  slaRespondedAt?: string;      // 1o contato humano real — SLA vs. 4 min (Playbook 2)
+  costOfInactionNote?: string;  // numero/conclusao que o lead articulou (Playbook 5.3)
+  refusalCount?: number;        // contador da Avenida do Nao neste deal (Playbook 6.4)
+  lastActivityAt?: string;      // ultima atividade/mensagem/nota real — regra dos 3 dias (Playbook 10.2)
+  /** Espelho do BANT do contato para o drawer; fonte de verdade = contato. */
+  bant?: { budget?: boolean; authority?: boolean; need?: boolean; timing?: boolean };
+
+  /** SDR responsável — espelho de Contact.sdrId. Fonte de verdade = contato. */
+  sdrId?: string;
 }
 
 /** Temperatura do lead com base em dias na etapa atual */
@@ -123,6 +137,23 @@ export interface Contact {
   firstTask?: string;
   registeredAt?: string;  // Data de Cadastro original
   externalId?: string;    // ID do Lead original
+
+  /* ── Playbook Comercial Be Fluent v3 — Qualificacao BANT 3-de-4 (Playbook 3.5) ── */
+  bantBudget?: boolean;     // orcamento compativel (inegociavel)
+  bantAuthority?: boolean;  // decide sozinho ou com quem
+  bantNeed?: boolean;       // dor genuina (inegociavel)
+  bantTiming?: boolean;     // prazo real
+  bantNote?: string;        // contexto livre da qualificacao
+  refusalCount?: number;    // Avenida do Nao a nivel de contato (Playbook 6.4)
+
+  /** SDR responsável por este contato/lead — vínculo real (owner segue como nome de exibição). */
+  sdrId?: string;
+}
+
+/** Regra 3-de-4 do Playbook 3.5: Budget e Need inegociaveis + pelo menos 3 no total. */
+export function isBantQualified(c: Pick<Contact, "bantBudget" | "bantAuthority" | "bantNeed" | "bantTiming">): boolean {
+  const total = [c.bantBudget, c.bantAuthority, c.bantNeed, c.bantTiming].filter(Boolean).length;
+  return total >= 3 && !!c.bantBudget && !!c.bantNeed;
 }
 
 export interface Activity {
@@ -138,6 +169,15 @@ export interface Activity {
   notes?: string;      // anotação vinculada à tarefa
 }
 
+/** Metas diárias por função — Playbook Comercial Be Fluent v3, Seção 11.2 */
+export interface DailyTargets {
+  leadsContacted: number;      // leads novos contatados em ate 4 min
+  coldReactivations: number;   // leads do backlog frio contatados/dia
+  diagnosisMeetings: number;   // reunioes de diagnostico realizadas/dia
+  followupsExecuted: number;   // follow-ups executados/dia (0 = "100% dos agendados")
+  b2bProspects: number;        // novos contatos de prospeccao B2B/dia
+}
+
 /** Configurações financeiras para cálculo real de CAC, LTV, Ticket Médio */
 export interface FinancialConfig {
   monthlyMarketingSpend: number;    // gasto mensal em marketing (R$)
@@ -146,7 +186,46 @@ export interface FinancialConfig {
   avgCostPerStudent: number;        // custo operacional por aluno/mês (R$)
   revenueGoalMonthly: number;       // meta de receita mensal (R$)
   leadsPerMonth: number;            // leads gerados por mês (para CAC por lead)
+  /* ── Playbook Comercial Be Fluent v3 ── */
+  slaTargetMinutes: number;         // SLA de resposta ao lead — meta em minutos (Playbook 2)
+  dailyTargets: DailyTargets;       // metas diarias por funcao (Playbook 11.2)
 }
+
+/** Benchmark de conversão por etapa — Playbook Seção 8.1 / 8.4 */
+export interface StageBenchmark {
+  stageId: string;
+  expectedConversionPct: number;  // taxa de referencia (etapa -> proxima)
+  alertFloorPct: number;          // piso; abaixo disso por 2 semanas = correcao (8.4)
+}
+/** Provedor de WhatsApp conectado a um SDR — Z-API ou Meta Cloud API (oficial). */
+export type WaProvider = "zapi" | "meta_cloud";
+
+/**
+ * SDR — vendedor/atendente com seu próprio WhatsApp Business conectado.
+ * Segredos (tokens) seguem o mesmo padrão de SavedIntegration.credentials:
+ * guardados no Supabase, sem cofre dedicado nesta versão.
+ */
+export interface Sdr {
+  id: string;
+  name: string;
+  email?: string;
+  avatarColor?: string;   // cor do badge/avatar no Inbox
+  active: boolean;
+  waProvider?: WaProvider;
+  // Z-API
+  zapiInstanceId?: string;
+  zapiToken?: string;
+  zapiClientToken?: string;
+  // Meta Cloud API (oficial)
+  metaPhoneNumberId?: string;
+  metaAccessToken?: string;
+  metaWabaId?: string;
+  metaVerifyToken?: string;
+  // Exibição
+  phoneDisplay?: string;  // "+55 12 99999-9999"
+  createdAt: string;
+}
+
 export interface Company {
   id: string;
   name: string;
@@ -193,6 +272,8 @@ interface StoreState {
   connectedChannels: ConnectedChannel[];
   financialConfig: FinancialConfig;
   integrations: Record<string, SavedIntegration>;
+  stageBenchmarks: StageBenchmark[];
+  sdrs: Sdr[];
 
   // pipelines & stages
   addPipeline: (name: string) => string;
@@ -223,6 +304,17 @@ interface StoreState {
 
   updateFinancialConfig: (patch: Partial<FinancialConfig>) => void;
 
+  // stage benchmarks (Playbook 8.1/8.4)
+  setStageBenchmark: (stageId: string, patch: Partial<Omit<StageBenchmark, "stageId">>) => void;
+  resetStageBenchmarks: () => void;
+
+  // SDRs — WhatsApp Business por atendente
+  addSdr: (s: Omit<Sdr, "id" | "createdAt">) => string;
+  updateSdr: (id: string, patch: Partial<Sdr>) => void;
+  deleteSdr: (id: string) => void;
+  /** Reatribui um contato (e seus deals abertos) a outro SDR, com rastro no histórico. */
+  assignContactToSdr: (contactId: string, sdrId: string) => void;
+
   /** Registra venda: marca won + bump de score + move para funil onboarding D1 */
   winDealAndOnboard: (dealId: string) => void;
 
@@ -252,6 +344,12 @@ function seed() {
       id: SEED_PIPELINE_ID,
       name: "Funil de Vendas",
       stages: STAGES.map((s) => ({ ...s })),
+    },
+    {
+      // Playbook Comercial Be Fluent v3 — funil de 8 etapas, ao lado do de 5.
+      id: COMERCIAL_BF_PIPELINE_ID,
+      name: "Funil Comercial Be Fluent",
+      stages: STAGES_COMERCIAL_BF.map((s) => ({ ...s })),
     },
   ];
   const deals: Deal[] = DEALS.map((d) => ({
@@ -285,8 +383,17 @@ function seed() {
     avgCostPerStudent: 0,
     revenueGoalMonthly: 0,
     leadsPerMonth: 0,
+    slaTargetMinutes: 4,
+    dailyTargets: {
+      leadsContacted: 2,     // Playbook 11.2: ~1-2/dia util
+      coldReactivations: 12, // ~10-15/dia util
+      diagnosisMeetings: 2,  // meta inicial 1-2/dia
+      followupsExecuted: 0,  // 0 = "100% dos agendados"
+      b2bProspects: 4,       // 3-5/dia
+    },
   };
-  return { pipelines, deals, contacts: [...CONTACTS], activities: [...ACTIVITIES], companies, automations, scoringRules, connectedChannels: [], financialConfig, integrations: {} };
+  const stageBenchmarks: StageBenchmark[] = STAGE_BENCHMARKS_BF.map((b) => ({ ...b }));
+  return { pipelines, deals, contacts: [...CONTACTS], activities: [...ACTIVITIES], companies, automations, scoringRules, connectedChannels: [], financialConfig, integrations: {}, stageBenchmarks, sdrs: [] };
 }
 
 const uid = () =>
@@ -476,11 +583,14 @@ export const useStore = create<StoreState>()(
         const newActivity: Activity = { ...a, id: uid(), done: false };
         set((s) => ({ activities: [newActivity, ...s.activities] }));
         void db.upsertActivity(newActivity);
+        // Playbook 10.2 — regra dos 3 dias: qualquer atividade num deal renova lastActivityAt.
+        if (newActivity.dealId) get().updateDeal(newActivity.dealId, { lastActivityAt: new Date().toISOString() });
       },
       updateActivity: (id, patch) => {
         set((s) => ({ activities: s.activities.map((a) => (a.id === id ? { ...a, ...patch } : a)) }));
         const updated = get().activities.find((a) => a.id === id);
         if (updated) void db.upsertActivity(updated);
+        if (updated?.dealId) get().updateDeal(updated.dealId, { lastActivityAt: new Date().toISOString() });
       },
       deleteActivity: (id) => {
         set((s) => ({ activities: s.activities.filter((a) => a.id !== id) }));
@@ -495,6 +605,60 @@ export const useStore = create<StoreState>()(
       updateFinancialConfig: (patch) => {
         set((s) => ({ financialConfig: { ...s.financialConfig, ...patch } }));
         void db.upsertFinancialConfig(get().financialConfig);
+      },
+
+      setStageBenchmark: (stageId, patch) => {
+        set((s) => {
+          const exists = s.stageBenchmarks.some((b) => b.stageId === stageId);
+          return {
+            stageBenchmarks: exists
+              ? s.stageBenchmarks.map((b) => (b.stageId === stageId ? { ...b, ...patch } : b))
+              : [...s.stageBenchmarks, { stageId, expectedConversionPct: 50, alertFloorPct: 40, ...patch }],
+          };
+        });
+      },
+      resetStageBenchmarks: () => {
+        set({ stageBenchmarks: STAGE_BENCHMARKS_BF.map((b) => ({ ...b })) });
+      },
+
+      addSdr: (s) => {
+        const id = uid();
+        const newSdr: Sdr = { ...s, id, createdAt: new Date().toISOString() };
+        set((st) => ({ sdrs: [...st.sdrs, newSdr] }));
+        void db.upsertSdr(newSdr);
+        return id;
+      },
+      updateSdr: (id, patch) => {
+        set((s) => ({ sdrs: s.sdrs.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
+        const updated = get().sdrs.find((x) => x.id === id);
+        if (updated) void db.upsertSdr(updated);
+      },
+      deleteSdr: (id) => {
+        set((s) => ({ sdrs: s.sdrs.filter((x) => x.id !== id) }));
+        void db.deleteSdr(id);
+      },
+      assignContactToSdr: (contactId, sdrId) => {
+        const state = get();
+        const sdr = state.sdrs.find((s) => s.id === sdrId);
+        const contact = state.contacts.find((c) => c.id === contactId);
+        if (!sdr || !contact) return;
+        const fromName = contact.owner || "—";
+
+        set((s) => ({
+          contacts: s.contacts.map((c) => (c.id === contactId ? { ...c, sdrId, owner: sdr.name } : c)),
+          deals: s.deals.map((d) => {
+            const linked = d.contactId === contactId || d.contact === contact.name;
+            if (!linked || d.status !== "open") return d;
+            const entry = { ts: new Date().toISOString(), text: `Lead transferido de ${fromName} para ${sdr.name}` };
+            return { ...d, sdrId, owner: sdr.name, history: [...(d.history ?? []), entry] };
+          }),
+        }));
+
+        const updatedContact = get().contacts.find((c) => c.id === contactId);
+        if (updatedContact) void db.upsertContact(updatedContact);
+        for (const d of get().deals) {
+          if (d.contactId === contactId || d.contact === contact.name) void db.upsertDeal(d);
+        }
       },
 
       winDealAndOnboard: (dealId) => {
@@ -635,29 +799,31 @@ export const useStore = create<StoreState>()(
     }),
     {
       name: "beely-store",
-      version: 6,
+      version: 8,
       skipHydration: true,
       migrate: (_persisted: unknown, fromVersion) => {
         if (fromVersion < 4) return seed() as unknown as StoreState;
-        if (fromVersion < 6) {
-          const base = seed();
-          const prev = (_persisted ?? {}) as Partial<StoreState>;
-          return {
-            ...base,
-            ...prev,
-            connectedChannels: prev.connectedChannels ?? [],
-            financialConfig: { ...base.financialConfig, ...(prev.financialConfig ?? {}) },
-            integrations: prev.integrations ?? {},
-          } as StoreState;
-        }
         const base = seed();
         const prev = (_persisted ?? {}) as Partial<StoreState>;
+
+        // Preserva os funis do usuario e ANEXA o "Funil Comercial Be Fluent"
+        // se ainda nao existir (nunca substitui, nunca remove).
+        const prevPipelines = prev.pipelines ?? base.pipelines;
+        const hasBfPipeline = prevPipelines.some((p) => p.id === COMERCIAL_BF_PIPELINE_ID);
+        const bfPipeline = base.pipelines.find((p) => p.id === COMERCIAL_BF_PIPELINE_ID);
+        const pipelines = hasBfPipeline || !bfPipeline
+          ? prevPipelines
+          : [...prevPipelines, bfPipeline];
+
         return {
           ...base,
           ...prev,
+          pipelines,
           connectedChannels: prev.connectedChannels ?? [],
           financialConfig: { ...base.financialConfig, ...(prev.financialConfig ?? {}) },
           integrations: prev.integrations ?? {},
+          stageBenchmarks: prev.stageBenchmarks?.length ? prev.stageBenchmarks : base.stageBenchmarks,
+          sdrs: prev.sdrs ?? [],
         } as StoreState;
       },
     }

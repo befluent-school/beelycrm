@@ -8,12 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { useStore, type Deal, dealTemperature } from "@/lib/store";
+import { useStore, type Deal, type Contact, dealTemperature, isBantQualified } from "@/lib/store";
+import { slaMinutes, formatMinutes } from "@/lib/sla";
 import { formatCurrency, formatDate, initials, cn } from "@/lib/utils";
+import { TransferLeadDialog } from "@/components/app/transfer-lead-dialog";
 import {
   Trophy, XCircle, Phone, Mail, MessageCircle,
   Plus, Check, Clock, X, Save, Trash2, Flame, Thermometer, Snowflake,
-  ArrowRightLeft,
+  ArrowRightLeft, Timer, ShieldCheck, ShieldAlert, Ban, Calculator, UserCog,
 } from "lucide-react";
 
 /* ── Temperatura ────────────────────────────────────────────── */
@@ -70,11 +72,12 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
   const {
     pipelines, contacts, activities,
     winDeal, winDealAndOnboard, loseDeal, updateDeal, deleteDeal,
-    addActivity, updateActivity, deleteActivity, toggleActivity,
+    addActivity, updateActivity, deleteActivity, toggleActivity, updateContact,
   } = useStore();
 
   const [lossMode,  setLossMode]  = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const [form, setForm] = useState({
     title:    deal.title,
     value:    deal.value,
@@ -159,8 +162,16 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
               <TempIcon className="size-3.5" /> {TEMP[temp].label}
             </span>
             <button
+              onClick={() => setTransferOpen(true)}
+              disabled={!linkedContact}
+              className="ml-auto flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground/60 transition-colors hover:bg-primary/10 hover:text-primary disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground/60"
+              title={linkedContact ? "Transferir para outro SDR" : "Vincule um contato para transferir"}
+            >
+              <UserCog className="size-3.5" /> Transferir
+            </button>
+            <button
               onClick={() => setConfirmDelete(true)}
-              className="ml-auto flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
               title="Excluir lead permanentemente"
             >
               <Trash2 className="size-3.5" /> Excluir
@@ -301,6 +312,7 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
           <Tabs defaultValue="detalhes">
             <TabsList className="w-full">
               <TabsTrigger value="detalhes" className="flex-1">Detalhes</TabsTrigger>
+              <TabsTrigger value="qualificacao" className="flex-1">Qualificação</TabsTrigger>
               <TabsTrigger value="tarefas"  className="flex-1">Tarefas</TabsTrigger>
               <TabsTrigger value="notas"    className="flex-1">Anotacoes</TabsTrigger>
               <TabsTrigger value="historico" className="flex-1">Histórico</TabsTrigger>
@@ -390,6 +402,16 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
               )}
 
               <Button onClick={save} className="w-full"><Save className="size-4" /> Salvar alteracoes</Button>
+            </TabsContent>
+
+            {/* ── QUALIFICAÇÃO / DIAGNÓSTICO (Playbook Comercial Be Fluent v3) ── */}
+            <TabsContent value="qualificacao" className="space-y-4">
+              <QualificacaoPanel
+                deal={deal}
+                contact={linkedContact}
+                onUpdateDeal={(patch) => updateDeal(deal.id, patch)}
+                onUpdateContact={(patch) => { if (linkedContact) updateContact(linkedContact.id, patch); }}
+              />
             </TabsContent>
 
             {/* ── TAREFAS ──────────────────────────────────────────── */}
@@ -524,6 +546,13 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
           </Tabs>
         </div>
       </SheetContent>
+
+      <TransferLeadDialog
+        contactId={linkedContact?.id ?? null}
+        contactName={linkedContact?.name ?? deal.contact}
+        open={transferOpen}
+        onOpenChange={setTransferOpen}
+      />
     </Sheet>
   );
 }
@@ -532,6 +561,185 @@ function StatusBadge({ deal }: { deal: Deal }) {
   if (deal.status === "won")  return <Badge variant="success">Ganho</Badge>;
   if (deal.status === "lost") return <Badge variant="destructive">Perdido</Badge>;
   return <Badge variant="warning">Aberto</Badge>;
+}
+
+/* ── Painel de Qualificação / Diagnóstico — Playbook Comercial Be Fluent v3 ── */
+const COI_PLACEHOLDER =
+  "Registre o número/conclusão que o LEAD articulou na reunião (Playbook 5.3):\n" +
+  '1) "Quantas oportunidades você deixou passar nos últimos 12 meses?"\n' +
+  '2) "Se continuar assim por 1 ano, o que isso te custa?"\n' +
+  '3) "Comparado a esse número, o investimento parece caro ou pequeno?"\n' +
+  '4) "Faz sentido resolver agora, ou seguir pagando esse custo?"';
+
+function QualificacaoPanel({
+  deal, contact, onUpdateDeal, onUpdateContact,
+}: {
+  deal: Deal;
+  contact: Contact | undefined;
+  onUpdateDeal: (patch: Partial<Deal>) => void;
+  onUpdateContact: (patch: Partial<Contact>) => void;
+}) {
+  // BANT — fonte de verdade = contato; espelha no deal.bant.
+  const bant = {
+    budget:    contact?.bantBudget ?? deal.bant?.budget ?? false,
+    authority: contact?.bantAuthority ?? deal.bant?.authority ?? false,
+    need:      contact?.bantNeed ?? deal.bant?.need ?? false,
+    timing:    contact?.bantTiming ?? deal.bant?.timing ?? false,
+  };
+  const [note, setNote] = useState(contact?.bantNote ?? "");
+  const [coi, setCoi] = useState(deal.costOfInactionNote ?? "");
+  const refusalCount = deal.refusalCount ?? contact?.refusalCount ?? 0;
+
+  const total = [bant.budget, bant.authority, bant.need, bant.timing].filter(Boolean).length;
+  const qualified = isBantQualified({
+    bantBudget: bant.budget, bantAuthority: bant.authority, bantNeed: bant.need, bantTiming: bant.timing,
+  });
+  const missingCore = !bant.budget || !bant.need;
+
+  function toggleBant(key: keyof typeof bant) {
+    const next = { ...bant, [key]: !bant[key] };
+    onUpdateContact({
+      bantBudget: next.budget, bantAuthority: next.authority, bantNeed: next.need, bantTiming: next.timing,
+    });
+    onUpdateDeal({ bant: next });
+  }
+
+  function saveNote() {
+    onUpdateContact({ bantNote: note });
+    toast.success("Qualificação salva.");
+  }
+  function saveCoi() {
+    onUpdateDeal({ costOfInactionNote: coi });
+    toast.success("Cost of Inaction salvo.");
+  }
+  function addRefusal() {
+    const next = refusalCount + 1;
+    onUpdateDeal({ refusalCount: next });
+    onUpdateContact({ refusalCount: next });
+    toast(next >= 2 ? "2ª recusa — parar de insistir (Playbook 6.4)." : "1ª recusa registrada.");
+  }
+  function resetRefusal() {
+    onUpdateDeal({ refusalCount: 0 });
+    onUpdateContact({ refusalCount: 0 });
+  }
+
+  const sla = slaMinutes(deal);
+
+  const BantRow = ({ k, label, hint, core }: { k: keyof typeof bant; label: string; hint: string; core?: boolean }) => (
+    <button
+      type="button"
+      onClick={() => toggleBant(k)}
+      className={cn(
+        "flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors",
+        bant[k] ? "border-green-500/40 bg-green-500/[0.06]" : "border-border hover:bg-white/[0.03]"
+      )}
+    >
+      <span className={cn(
+        "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded border",
+        bant[k] ? "border-green-500 bg-green-500/20 text-green-400" : "border-border"
+      )}>
+        {bant[k] && <Check className="size-3" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="text-sm font-medium">
+          {label} {core && <span className="text-[10px] font-semibold text-primary">· inegociável</span>}
+        </span>
+        <span className="mt-0.5 block text-xs text-muted-foreground">{hint}</span>
+      </span>
+    </button>
+  );
+
+  return (
+    <div className="space-y-5">
+      {/* BANT 3-de-4 (Playbook 3.5) */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Qualificação BANT — regra 3-de-4</p>
+          {qualified ? (
+            <Badge variant="success" className="gap-1"><ShieldCheck className="size-3" /> Qualificado {total}/4</Badge>
+          ) : (
+            <Badge variant="outline" className="gap-1 text-muted-foreground"><ShieldAlert className="size-3" /> {total}/4</Badge>
+          )}
+        </div>
+        <BantRow k="budget"    label="Budget"    core hint="Investimento compatível (R$357–1.697/mês) — perguntar SEMPRE depois da Implicação" />
+        <BantRow k="need"      label="Need"      core hint="Dor genuína, já tentou resolver antes (coberto pelo SPIN)" />
+        <BantRow k="authority" label="Authority" hint="Decisão individual ou compartilhada (RH, gestor, cônjuge)" />
+        <BantRow k="timing"    label="Timing"    hint="Prazo real (viagem, entrevista, promoção)" />
+        {!qualified && missingCore && (
+          <p className="flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-200">
+            <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
+            Sem Budget e Need não há reunião de diagnóstico a marcar — só nutrição (Playbook 3.5).
+          </p>
+        )}
+        <div className="space-y-1.5 pt-1">
+          <Label className="text-xs">Contexto da qualificação</Label>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            placeholder="Ex.: decide com a esposa; prazo = entrevista em março; orçamento até R$600/mês"
+            className="w-full rounded-lg border border-input bg-background/50 p-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40 resize-none"
+          />
+          <Button size="sm" variant="outline" onClick={saveNote} className="gap-1.5"><Save className="size-3.5" /> Salvar contexto</Button>
+        </div>
+      </div>
+
+      {/* Cost of Inaction (Playbook 5.3) */}
+      <div className="space-y-1.5 border-t border-border/60 pt-4">
+        <Label className="flex items-center gap-1.5 text-xs"><Calculator className="size-3.5 text-primary" /> Cost of Inaction — o número que o lead articulou</Label>
+        <textarea
+          value={coi}
+          onChange={(e) => setCoi(e.target.value)}
+          rows={4}
+          placeholder={COI_PLACEHOLDER}
+          className="w-full rounded-lg border border-input bg-background/50 p-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40 resize-none"
+        />
+        <Button size="sm" variant="outline" onClick={saveCoi} className="gap-1.5"><Save className="size-3.5" /> Salvar Cost of Inaction</Button>
+        <p className="text-[10px] text-muted-foreground">Retomar este número na proposta (5.4) e nos follow-ups.</p>
+      </div>
+
+      {/* Avenida do Não (Playbook 6.4) */}
+      <div className="space-y-2 border-t border-border/60 pt-4">
+        <Label className="flex items-center gap-1.5 text-xs"><Ban className="size-3.5 text-red-400" /> Avenida do Não — recusas do lead</Label>
+        <div className="flex items-center gap-3">
+          <span className={cn(
+            "flex size-9 items-center justify-center rounded-lg font-display text-lg font-bold",
+            refusalCount === 0 ? "bg-secondary text-muted-foreground" :
+            refusalCount === 1 ? "bg-amber-500/15 text-amber-400" : "bg-red-500/15 text-red-400"
+          )}>{refusalCount}</span>
+          <div className="min-w-0 flex-1 text-xs text-muted-foreground">
+            {refusalCount === 0 && "Nenhuma recusa registrada."}
+            {refusalCount === 1 && "1ª recusa: fazer 1 pergunta de aprofundamento. Nunca insistir em fechamento na mesma mensagem."}
+            {refusalCount >= 2 && "2ª recusa: PARAR de insistir. Só mensagem de encerramento + reativação distante (Follow 3). Nunca questionar a decisão."}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={addRefusal} className="gap-1.5"><Plus className="size-3.5" /> +1 recusa</Button>
+          {refusalCount > 0 && <Button size="sm" variant="ghost" onClick={resetRefusal}>Zerar</Button>}
+        </div>
+      </div>
+
+      {/* SLA de resposta (Playbook 2) */}
+      <div className="space-y-2 border-t border-border/60 pt-4">
+        <Label className="flex items-center gap-1.5 text-xs"><Timer className="size-3.5 text-primary" /> SLA de resposta (meta: 4 min)</Label>
+        {sla !== null ? (
+          <p className={cn("text-sm font-semibold", sla <= 4 ? "text-green-400" : "text-red-400")}>
+            1º contato em {formatMinutes(sla)} {sla <= 4 ? "· dentro da meta" : "· acima da meta de 4 min"}
+          </p>
+        ) : (
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-muted-foreground">1º contato humano ainda não registrado.</p>
+            <Button
+              size="sm"
+              onClick={() => { onUpdateDeal({ slaRespondedAt: new Date().toISOString() }); toast.success("1º contato marcado agora."); }}
+            >
+              Marcar 1º contato agora
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function QuickAction({ icon: Icon, label, href, accent }: {

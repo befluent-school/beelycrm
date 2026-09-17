@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 
 /**
  * GET /api/inbox/init-schema
- * Adiciona colunas faltantes à tabela inbox_messages via pg REST.
- * Acesse uma vez após o deploy para garantir o schema atualizado.
+ * Adiciona colunas/tabelas faltantes para o Inbox multi-SDR via pg REST
+ * (aditivo — ALTER ... ADD COLUMN IF NOT EXISTS / CREATE TABLE IF NOT EXISTS).
+ * Acesse uma vez após o deploy para garantir o schema atualizado; também
+ * chamado automaticamente por use-supabase-sync.ts na inicialização.
  */
 export async function GET() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -20,6 +22,32 @@ export async function GET() {
     "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS media_caption TEXT",
     "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS file_name TEXT",
     "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS is_lid BOOLEAN DEFAULT FALSE",
+    // Inbox multi-SDR — cada conversa fica associada ao SDR/instância que a recebeu.
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS sdr_id TEXT",
+    "ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS thread_key TEXT",
+    `CREATE TABLE IF NOT EXISTS sdrs (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT,
+      avatar_color TEXT,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      wa_provider TEXT,
+      zapi_instance_id TEXT,
+      zapi_token TEXT,
+      zapi_client_token TEXT,
+      meta_phone_number_id TEXT,
+      meta_access_token TEXT,
+      meta_waba_id TEXT,
+      meta_verify_token TEXT,
+      phone_display TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS conversation_assignments (
+      thread_key TEXT PRIMARY KEY,
+      sdr_id TEXT,
+      contact_id TEXT,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`,
   ];
 
   const results: { sql: string; ok: boolean; error?: string }[] = [];

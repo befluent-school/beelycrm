@@ -10,8 +10,9 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Plus, Zap, ArrowRight, Webhook, Trash2, Pencil, X, TrendingUp, TrendingDown, Star, Clock, MessageCircle, Mail, MousePointer, UserCheck, Save, Loader2, Repeat } from "lucide-react";
+import { Plus, Zap, ArrowRight, Webhook, Trash2, Pencil, X, TrendingUp, TrendingDown, Star, Clock, MessageCircle, Mail, MousePointer, UserCheck, Save, Loader2, Repeat, CalendarClock } from "lucide-react";
 import { useStore, useHydrated } from "@/lib/store";
+import { SITUATION_LABELS, type FollowupSituation } from "@/lib/followup-playbook-labels";
 import { cn } from "@/lib/utils";
 
 const TRIGGERS = [
@@ -379,6 +380,7 @@ export function AutomationsView() {
       <TabsList>
         <TabsTrigger value="automations">Automações</TabsTrigger>
         <TabsTrigger value="followups">Follow-up</TabsTrigger>
+        <TabsTrigger value="playbook-followups">Follow-ups (Playbook)</TabsTrigger>
         <TabsTrigger value="scoring">Lead Scoring</TabsTrigger>
         <TabsTrigger value="forms">Formulários</TabsTrigger>
       </TabsList>
@@ -430,6 +432,11 @@ export function AutomationsView() {
       {/* ── Follow-up automático ──────────────────────────────── */}
       <TabsContent value="followups">
         <FollowupEditor />
+      </TabsContent>
+
+      {/* ── Follow-ups por situação (Playbook Comercial Be Fluent v3) ── */}
+      <TabsContent value="playbook-followups">
+        <PlaybookFollowupEditor />
       </TabsContent>
 
       {/* ── Lead Scoring ───────────────────────────────────── */}
@@ -776,6 +783,196 @@ function FollowupEditor() {
           </CardContent>
         </Card>
       ))}
+    </div>
+  );
+}
+
+/* ── Editor dos 7 follow-ups por situação — Playbook Comercial Be Fluent v3 (7.2 / 7.3) ── */
+interface PlaybookTemplateUI {
+  situationKey: FollowupSituation;
+  channel: "whatsapp" | "email";
+  message: string;
+  dayOffset: number;
+  suggestedTime: string;
+  active: boolean;
+}
+
+interface PlaybookRunResult {
+  ok: boolean;
+  processed: number;
+  results: { dealId: string; contact: string; situation: string; label: string; action: string }[];
+}
+
+function PlaybookFollowupEditor() {
+  const [templates, setTemplates] = useState<PlaybookTemplateUI[] | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const [lastRun, setLastRun] = useState<PlaybookRunResult | null>(null);
+
+  useEffect(() => {
+    fetch("/api/playbook-followups")
+      .then((r) => r.json())
+      .then((data) => setTemplates(data))
+      .catch(() => setTemplates([]));
+  }, []);
+
+  function updateLocal(key: string, patch: Partial<PlaybookTemplateUI>) {
+    setTemplates((prev) => prev?.map((t) => (t.situationKey === key ? { ...t, ...patch } : t)) ?? prev);
+  }
+
+  async function save(t: PlaybookTemplateUI) {
+    setSaving(t.situationKey);
+    try {
+      const res = await fetch("/api/playbook-followups", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(t),
+      });
+      if (res.ok) toast.success("Modelo salvo!");
+      else toast.error("Erro ao salvar modelo.");
+    } catch {
+      toast.error("Falha de conexão ao salvar.");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function runNow() {
+    setRunning(true);
+    setLastRun(null);
+    try {
+      const res = await fetch("/api/cron/playbook-followups");
+      const data = await res.json();
+      if (res.ok) {
+        setLastRun(data);
+        toast.success(
+          data.processed > 0
+            ? `${data.processed} follow-up${data.processed > 1 ? "s" : ""} sugerido${data.processed > 1 ? "s" : ""} (tarefa criada com o script).`
+            : "Nenhum lead com gatilho de follow-up hoje."
+        );
+      } else {
+        toast.error(data.error ?? "Erro ao gerar follow-ups.");
+      }
+    } catch {
+      toast.error("Falha de conexão ao gerar follow-ups.");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-primary/30 bg-primary/[0.03]">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <CalendarClock className="mt-0.5 size-5 shrink-0 text-primary" />
+            <div className="text-sm">
+              <p className="font-semibold">Como funciona</p>
+              <p className="mt-1 text-muted-foreground">
+                São os <strong>7 modelos oficiais por situação</strong> do Playbook (Seção 7.2), disparados por
+                <strong> gatilho de situação</strong> — não por número de tentativa. Ex.: &quot;Proposta enviada&quot; parada há
+                D+1 sem atividade → modelo &quot;Lead sumiu depois da proposta&quot;. O calendário D+1/D+3/D+5/D+8/D+15/D+30-60
+                é a Seção 7.3. Este sistema é <strong>paralelo</strong> à aba &quot;Follow-up&quot; (5 templates sequenciais), que
+                continua funcionando.
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Ao gerar, o sistema cria uma <strong>tarefa no negócio</strong> com o script pronto e a data de hoje —
+                não envia mensagem automática (sem canal de WhatsApp conectado nesta fase).
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 flex items-center gap-3 border-t border-border/60 pt-4">
+            <Button onClick={runNow} disabled={running} className="gap-1.5">
+              {running ? <Loader2 className="size-4 animate-spin" /> : <Zap className="size-4" />}
+              {running ? "Gerando..." : "Gerar follow-ups sugeridos do dia"}
+            </Button>
+            {lastRun && (
+              <p className="text-xs text-muted-foreground">
+                Último: <strong className="text-foreground">{lastRun.processed}</strong> follow-up{lastRun.processed !== 1 ? "s" : ""} sugerido{lastRun.processed !== 1 ? "s" : ""}.
+              </p>
+            )}
+          </div>
+          {lastRun && lastRun.results.length > 0 && (
+            <div className="mt-3 space-y-1 border-t border-border/60 pt-3">
+              {lastRun.results.map((r, i) => (
+                <div key={i} className="flex items-center justify-between text-xs">
+                  <span className="text-foreground">{r.contact || r.dealId}</span>
+                  <span className="text-muted-foreground">{r.label} → {r.action}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {templates === null && (
+        <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+      )}
+
+      {templates
+        ?.slice()
+        .sort((a, b) => a.dayOffset - b.dayOffset)
+        .map((t) => (
+          <Card key={t.situationKey} className={cn(!t.active && "opacity-60")}>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Badge variant="outline">D+{t.dayOffset}</Badge>
+                  {SITUATION_LABELS[t.situationKey]}
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Switch checked={t.active} onCheckedChange={(v) => updateLocal(t.situationKey, { active: v })} />
+                    Ativo
+                  </label>
+                  <select
+                    value={t.channel}
+                    onChange={(e) => updateLocal(t.situationKey, { channel: e.target.value as "whatsapp" | "email" })}
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none"
+                  >
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="email">E-mail</option>
+                  </select>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Dia após o gatilho (D+N)</Label>
+                  <Input
+                    type="number" min={1}
+                    value={t.dayOffset}
+                    onChange={(e) => updateLocal(t.situationKey, { dayOffset: Number(e.target.value) || 1 })}
+                    className="h-9"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Horário sugerido</Label>
+                  <Input
+                    type="time"
+                    value={t.suggestedTime}
+                    onChange={(e) => updateLocal(t.situationKey, { suggestedTime: e.target.value })}
+                    className="h-9"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Script — use <code className="rounded bg-white/10 px-1">{"{{primeiroNome}}"}</code>, <code className="rounded bg-white/10 px-1">{"{{dia}}"}</code>, <code className="rounded bg-white/10 px-1">{"{{mes}}"}</code></Label>
+                <textarea
+                  value={t.message}
+                  onChange={(e) => updateLocal(t.situationKey, { message: e.target.value })}
+                  rows={3}
+                  className="w-full rounded-lg border border-input bg-background/50 p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40 resize-none"
+                />
+              </div>
+              <Button size="sm" onClick={() => save(t)} disabled={saving === t.situationKey} className="gap-1.5">
+                {saving === t.situationKey ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                Salvar modelo
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
     </div>
   );
 }

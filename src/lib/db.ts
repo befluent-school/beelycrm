@@ -9,7 +9,7 @@
 import { supabase } from "@/lib/supabase";
 import type {
   Pipeline, Deal, Contact, Activity, Company,
-  Automation, ScoringRule, ConnectedChannel, SavedIntegration, FinancialConfig,
+  Automation, ScoringRule, ConnectedChannel, SavedIntegration, FinancialConfig, Sdr,
 } from "@/lib/store";
 
 /* ── Helpers de conversão ─────────────────────────────────── */
@@ -33,6 +33,13 @@ function toDeal(r: any): Deal {
     history:        r.history ?? [],
     createdAt:      r.created_at,
     stageEnteredAt: r.stage_entered_at ?? undefined,
+    // Playbook Comercial Be Fluent v3 — campos aditivos
+    slaRespondedAt:     r.sla_responded_at ?? undefined,
+    costOfInactionNote: r.cost_of_inaction_note ?? undefined,
+    refusalCount:       r.refusal_count ?? undefined,
+    lastActivityAt:     r.last_activity_at ?? undefined,
+    bant:              r.bant ?? undefined,
+    sdrId:             r.sdr_id ?? undefined,
   };
 }
 
@@ -108,6 +115,14 @@ function toContact(r: any): Contact {
     firstTask:           r.first_task ?? undefined,
     registeredAt:        r.registered_at ?? undefined,
     externalId:          r.external_id ?? undefined,
+    // Playbook Comercial Be Fluent v3 — qualificação BANT + Avenida do Não
+    bantBudget:          r.bant_budget ?? undefined,
+    bantAuthority:       r.bant_authority ?? undefined,
+    bantNeed:            r.bant_need ?? undefined,
+    bantTiming:          r.bant_timing ?? undefined,
+    bantNote:            r.bant_note ?? undefined,
+    refusalCount:        r.refusal_count ?? undefined,
+    sdrId:               r.sdr_id ?? undefined,
   };
 }
 
@@ -183,6 +198,14 @@ function fromContact(c: Contact) {
     first_task:          c.firstTask ?? null,
     registered_at:       c.registeredAt ?? null,
     external_id:         c.externalId ?? null,
+    // Playbook Comercial Be Fluent v3
+    bant_budget:         c.bantBudget ?? null,
+    bant_authority:      c.bantAuthority ?? null,
+    bant_need:           c.bantNeed ?? null,
+    bant_timing:         c.bantTiming ?? null,
+    bant_note:           c.bantNote ?? null,
+    refusal_count:       c.refusalCount ?? 0,
+    sdr_id:              c.sdrId ?? null,
     updated_at:          new Date().toISOString(),
   };
 }
@@ -205,6 +228,13 @@ function fromDeal(d: Deal) {
     stage_entered_at:d.stageEnteredAt ?? null,
     created_at:      d.createdAt,
     updated_at:      new Date().toISOString(),
+    // Playbook Comercial Be Fluent v3 — campos aditivos
+    sla_responded_at:      d.slaRespondedAt ?? null,
+    cost_of_inaction_note: d.costOfInactionNote ?? null,
+    refusal_count:         d.refusalCount ?? 0,
+    last_activity_at:      d.lastActivityAt ?? null,
+    bant:                  d.bant ?? null,
+    sdr_id:                d.sdrId ?? null,
   };
 }
 
@@ -252,7 +282,57 @@ export interface DbSnapshot {
   connectedChannels: ConnectedChannel[];
   integrations:      Record<string, SavedIntegration>;
   financialConfig:   FinancialConfig;
+  sdrs:              Sdr[];
 }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toSdr(r: any): Sdr {
+  return {
+    id:                 r.id,
+    name:               r.name,
+    email:              r.email ?? undefined,
+    avatarColor:        r.avatar_color ?? undefined,
+    active:             r.active ?? true,
+    waProvider:         r.wa_provider ?? undefined,
+    zapiInstanceId:     r.zapi_instance_id ?? undefined,
+    zapiToken:          r.zapi_token ?? undefined,
+    zapiClientToken:    r.zapi_client_token ?? undefined,
+    metaPhoneNumberId:  r.meta_phone_number_id ?? undefined,
+    metaAccessToken:    r.meta_access_token ?? undefined,
+    metaWabaId:         r.meta_waba_id ?? undefined,
+    metaVerifyToken:    r.meta_verify_token ?? undefined,
+    phoneDisplay:       r.phone_display ?? undefined,
+    createdAt:          r.created_at,
+  };
+}
+
+function fromSdr(s: Sdr) {
+  return {
+    id:                     s.id,
+    name:                   s.name,
+    email:                  s.email ?? null,
+    avatar_color:           s.avatarColor ?? null,
+    active:                 s.active ?? true,
+    wa_provider:            s.waProvider ?? null,
+    zapi_instance_id:       s.zapiInstanceId ?? null,
+    zapi_token:             s.zapiToken ?? null,
+    zapi_client_token:      s.zapiClientToken ?? null,
+    meta_phone_number_id:   s.metaPhoneNumberId ?? null,
+    meta_access_token:      s.metaAccessToken ?? null,
+    meta_waba_id:           s.metaWabaId ?? null,
+    meta_verify_token:      s.metaVerifyToken ?? null,
+    phone_display:          s.phoneDisplay ?? null,
+    created_at:             s.createdAt,
+  };
+}
+
+const DEFAULT_DAILY_TARGETS = {
+  leadsContacted: 2,
+  coldReactivations: 12,
+  diagnosisMeetings: 2,
+  followupsExecuted: 0,
+  b2bProspects: 4,
+};
 
 const DEFAULT_FINANCIAL: FinancialConfig = {
   monthlyMarketingSpend: 0,
@@ -261,6 +341,8 @@ const DEFAULT_FINANCIAL: FinancialConfig = {
   avgCostPerStudent: 0,
   revenueGoalMonthly: 0,
   leadsPerMonth: 0,
+  slaTargetMinutes: 4,
+  dailyTargets: { ...DEFAULT_DAILY_TARGETS },
 };
 
 export async function loadAll(): Promise<DbSnapshot | null> {
@@ -276,6 +358,7 @@ export async function loadAll(): Promise<DbSnapshot | null> {
       { data: channels },
       { data: integrations },
       { data: financial },
+      { data: sdrs },
     ] = await Promise.all([
       supabase.from("pipelines").select("*").order("created_at"),
       supabase.from("deals").select("*").order("created_at"),
@@ -287,6 +370,7 @@ export async function loadAll(): Promise<DbSnapshot | null> {
       supabase.from("connected_channels").select("*"),
       supabase.from("integrations").select("*"),
       supabase.from("financial_config").select("*").eq("id", "default").single(),
+      supabase.from("sdrs").select("*").order("created_at").then((r) => r, () => ({ data: [] })),
     ]);
 
     // Se não há pipelines, banco está vazio — retorna null para usar seed local
@@ -340,7 +424,10 @@ export async function loadAll(): Promise<DbSnapshot | null> {
         avgCostPerStudent:     Number(financial.avg_cost_per_student ?? 0),
         revenueGoalMonthly:    Number(financial.revenue_goal_monthly ?? 0),
         leadsPerMonth:         Number(financial.leads_per_month ?? 0),
+        slaTargetMinutes:      Number(financial.sla_target_minutes ?? 4),
+        dailyTargets:          { ...DEFAULT_DAILY_TARGETS, ...(financial.daily_targets ?? {}) },
       } : DEFAULT_FINANCIAL,
+      sdrs: (sdrs ?? []).map(toSdr),
     };
   } catch (e) {
     console.error("[db] loadAll falhou:", e);
@@ -376,6 +463,8 @@ export async function seedSupabase(snapshot: DbSnapshot): Promise<void> {
         avg_cost_per_student:     snapshot.financialConfig.avgCostPerStudent,
         revenue_goal_monthly:     snapshot.financialConfig.revenueGoalMonthly,
         leads_per_month:          snapshot.financialConfig.leadsPerMonth,
+        sla_target_minutes:       snapshot.financialConfig.slaTargetMinutes,
+        daily_targets:            snapshot.financialConfig.dailyTargets,
         updated_at:               new Date().toISOString(),
       }),
     ]);
@@ -478,7 +567,17 @@ export const db = {
       avg_cost_per_student:    fc.avgCostPerStudent,
       revenue_goal_monthly:    fc.revenueGoalMonthly,
       leads_per_month:         fc.leadsPerMonth,
+      sla_target_minutes:      fc.slaTargetMinutes,
+      daily_targets:           fc.dailyTargets,
       updated_at:              new Date().toISOString(),
     });
+  },
+
+  // ── SDRs (WhatsApp Business por atendente) ──────────────────
+  upsertSdr: async (s: Sdr) => {
+    await supabase.from("sdrs").upsert(fromSdr(s));
+  },
+  deleteSdr: async (id: string) => {
+    await supabase.from("sdrs").delete().eq("id", id);
   },
 };

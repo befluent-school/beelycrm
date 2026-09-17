@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import {
   TrendingUp, Briefcase, Trophy, Target, UserPlus, Receipt,
   Phone, CalendarClock, Mail, Flame, Thermometer, Snowflake,
-  Coins, Gauge, Timer, PieChart,
+  Coins, Gauge, Timer, PieChart, AlertTriangle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,8 @@ import { RevenueChart, FunnelChartLive } from "@/components/app/dashboard-charts
 import { SourcesPanel } from "@/components/app/sources-panel";
 import { AiSummary } from "@/components/app/ai-summary";
 import { useStore, useHydrated, dealTemperature } from "@/lib/store";
+import { slaDailyStats, formatMinutes } from "@/lib/sla";
+import { staleDeals } from "@/lib/pipeline-alerts";
 import { formatCurrency, cn } from "@/lib/utils";
 
 interface Kpi {
@@ -139,6 +141,35 @@ export function DashboardView() {
     };
   }, [deals, hydrated]);
 
+  /* Operação do dia — Playbook Comercial Be Fluent v3 (SLA 4min, metas 11.2, 3 dias 10.2) */
+  const op = useMemo(() => {
+    if (!hydrated) return null;
+    const target = financialConfig.slaTargetMinutes || 4;
+    const sla = slaDailyStats(deals, target);
+    const stale = staleDeals(deals, pipelines);
+
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const isToday = (iso?: string) => !!iso && iso.slice(0, 10) === todayISO;
+    const doneToday = activities.filter((a) => a.done && isToday(a.dueDate));
+
+    const realized = {
+      leadsContacted:    deals.filter((d) => isToday(d.slaRespondedAt)).length,
+      coldReactivations: doneToday.filter((a) => /reativa|frio|backlog/i.test(a.title)).length,
+      diagnosisMeetings: doneToday.filter((a) => a.type === "meeting").length,
+      followupsExecuted: doneToday.filter((a) => /follow-?up/i.test(a.title)).length,
+      b2bProspects:      doneToday.filter((a) => /b2b|prospec|linkedin/i.test(a.title)).length,
+    };
+    const targets = financialConfig.dailyTargets;
+    const goalRows = [
+      { key: "leadsContacted",    label: "Leads contatados em 4 min", goal: targets.leadsContacted,    real: realized.leadsContacted },
+      { key: "coldReactivations", label: "Reativação de base fria",     goal: targets.coldReactivations, real: realized.coldReactivations },
+      { key: "diagnosisMeetings", label: "Reuniões de diagnóstico",     goal: targets.diagnosisMeetings, real: realized.diagnosisMeetings },
+      { key: "followupsExecuted", label: "Follow-ups executados",        goal: targets.followupsExecuted, real: realized.followupsExecuted },
+      { key: "b2bProspects",      label: "Prospecção B2B ativa",         goal: targets.b2bProspects,      real: realized.b2bProspects },
+    ];
+    return { sla, target, staleCount: stale.length, goalRows };
+  }, [deals, activities, pipelines, financialConfig, hydrated]);
+
   const Skeleton = ({ className }: { className?: string }) => (
     <div className={cn("animate-pulse rounded bg-white/10", className)} />
   );
@@ -173,6 +204,87 @@ export function DashboardView() {
           <KpiSection title="Receita"    subtitle="Previsibilidade e valor de carteira" kpis={bi!.revenue} />
           <KpiSection title="Velocidade" subtitle="Ritmo do ciclo de vendas"            kpis={bi!.velocity} />
         </div>
+      )}
+
+      {/* Operação do dia — Playbook Comercial Be Fluent v3 */}
+      {hydrated && op && (
+        <section>
+          <div className="mb-3 flex items-baseline gap-3">
+            <h2 className="font-display text-sm font-bold uppercase tracking-wide text-foreground">Operação do dia</h2>
+            <span className="text-xs text-muted-foreground">Playbook Comercial Be Fluent — SLA, metas diárias e pipeline parado</span>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            {/* SLA do dia */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Timer className="size-4 text-primary" /> SLA de resposta (meta {op.target} min)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className={cn(
+                  "font-display text-3xl font-extrabold",
+                  op.sla.total === 0 ? "text-muted-foreground" : op.sla.pct >= 80 ? "text-green-400" : "text-red-400"
+                )}>
+                  {op.sla.total === 0 ? "—" : `${Math.round(op.sla.pct)}%`}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {op.sla.withinTarget}/{op.sla.total} leads de hoje respondidos em até {op.target} min
+                </p>
+                {op.sla.responded > 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">Tempo médio: {formatMinutes(op.sla.avgMinutes)}</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Pipeline parado (3 dias) */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <AlertTriangle className={cn("size-4", op.staleCount > 0 ? "text-red-400" : "text-muted-foreground")} />
+                  Pipeline parado há 3+ dias
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className={cn("font-display text-3xl font-extrabold", op.staleCount > 0 ? "text-red-400" : "text-green-400")}>
+                  {op.staleCount}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Negócios em &quot;Negociação&quot; ou &quot;Proposta enviada&quot; sem movimento (Playbook 10.2)
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Metas diárias */}
+            <Card className="lg:row-span-1">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Gauge className="size-4 text-primary" /> Metas diárias por função
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {op.goalRows.map((r) => {
+                  const pct = r.goal > 0 ? Math.min(100, (r.real / r.goal) * 100) : (r.real > 0 ? 100 : 0);
+                  const ok = r.goal === 0 ? true : r.real >= r.goal;
+                  return (
+                    <div key={r.key}>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">{r.label}</span>
+                        <span className={cn("font-semibold", ok ? "text-green-400" : "text-foreground")}>
+                          {r.real}{r.goal > 0 ? ` / ${r.goal}` : ""}
+                        </span>
+                      </div>
+                      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                        <div className={cn("h-full rounded-full", ok ? "bg-green-400" : "bg-primary")} style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="pt-1 text-[10px] text-muted-foreground">Recalibrar após 60 dias de dado real (Playbook 11.3).</p>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
       )}
 
       {/* Gráficos */}

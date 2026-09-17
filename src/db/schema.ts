@@ -29,6 +29,17 @@ export const emailSendStatusEnum = pgEnum("email_send_status", ["queued", "sent"
 export const callProviderEnum = pgEnum("call_provider", ["vapi", "twilio"]);
 export const callStatusEnum = pgEnum("call_status", ["queued", "ringing", "in_progress", "completed", "no_answer", "failed", "voicemail"]);
 
+/* ─── Playbook Comercial Be Fluent v3 ─────────────────────── */
+export const followupSituationEnum = pgEnum("followup_situation", [
+  "proposta_sumiu",
+  "levar_pro_time",
+  "reativacao_frio",
+  "pediu_desconto_sumiu",
+  "contrato_sem_retorno",
+  "pediu_info_sumiu",
+  "ultima_tentativa",
+]);
+
 /* ─── Tenancy ────────────────────────────────────────────── */
 export const organizations = pgTable("organizations", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -99,6 +110,15 @@ export const contacts = pgTable(
     tags: jsonb("tags").$type<string[]>().default([]),
     customFields: jsonb("custom_fields").$type<Record<string, unknown>>().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    /* ── Playbook Comercial Be Fluent v3 — BANT 3-de-4 (3.5) + Avenida do Não (6.4) ── */
+    bantBudget: boolean("bant_budget"),
+    bantAuthority: boolean("bant_authority"),
+    bantNeed: boolean("bant_need"),
+    bantTiming: boolean("bant_timing"),
+    bantNote: text("bant_note"),
+    refusalCount: integer("refusal_count").notNull().default(0),
+    /** SDR responsável (id solto, sem FK rígida — mesmo padrão de stageId em stage_benchmarks). */
+    sdrId: text("sdr_id"),
   },
   (t) => [index("contacts_org_idx").on(t.orgId), index("contacts_email_idx").on(t.email)]
 );
@@ -142,6 +162,15 @@ export const deals = pgTable(
     position: integer("position").notNull().default(0),
     expectedCloseAt: timestamp("expected_close_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    /* ── Playbook Comercial Be Fluent v3 (aditivo, nullable) ── */
+    stageEnteredAt: timestamp("stage_entered_at", { withTimezone: true }),
+    slaRespondedAt: timestamp("sla_responded_at", { withTimezone: true }),
+    costOfInactionNote: text("cost_of_inaction_note"),
+    refusalCount: integer("refusal_count").notNull().default(0),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
+    bant: jsonb("bant").$type<{ budget?: boolean; authority?: boolean; need?: boolean; timing?: boolean }>(),
+    /** SDR responsável (id solto, espelha contacts.sdrId). */
+    sdrId: text("sdr_id"),
   },
   (t) => [index("deals_org_idx").on(t.orgId), index("deals_stage_idx").on(t.stageId)]
 );
@@ -372,3 +401,68 @@ export const webhooks = pgTable("webhooks", {
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+/* ─── Playbook Comercial Be Fluent v3 — Follow-up por situação (7.2/7.3) ───
+ * Paralela a `followup_templates` (5 templates sequenciais), que fica intocada.
+ * Dispara por gatilho de situação, não por número de tentativa. */
+export const followupPlaybookTemplates = pgTable(
+  "followup_playbook_templates",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id").references(() => organizations.id, { onDelete: "cascade" }),
+    situationKey: followupSituationEnum("situation_key").notNull(),
+    channel: text("channel").notNull().default("whatsapp"),
+    message: text("message").notNull(),
+    dayOffset: integer("day_offset").notNull().default(1),
+    suggestedTime: text("suggested_time"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("followup_playbook_templates_org_idx").on(t.orgId)]
+);
+
+/* ─── Benchmarks de conversão por etapa (Playbook 8.1/8.4) ─── */
+export const stageBenchmarks = pgTable(
+  "stage_benchmarks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id").references(() => organizations.id, { onDelete: "cascade" }),
+    // Sem FK rígida: as stages runtime vivem em pipelines.stages (jsonb).
+    stageId: text("stage_id").notNull(),
+    expectedConversionPct: integer("expected_conversion_pct").notNull().default(50),
+    alertFloorPct: integer("alert_floor_pct").notNull().default(40),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("stage_benchmarks_org_idx").on(t.orgId)]
+);
+
+/* ─── Inbox multi-SDR — WhatsApp Business por atendente ─────
+ * O runtime real persiste em `sdrs`/`inbox_messages` via Supabase REST
+ * (src/lib/db.ts, src/lib/message-store.ts), auto-criadas por
+ * /api/inbox/init-schema. Esta tabela documenta o schema formalmente. */
+export const waProviderEnum = pgEnum("wa_provider", ["zapi", "meta_cloud"]);
+
+export const sdrs = pgTable(
+  "sdrs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id").references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    email: text("email"),
+    avatarColor: text("avatar_color"),
+    active: boolean("active").notNull().default(true),
+    waProvider: waProviderEnum("wa_provider"),
+    // Z-API
+    zapiInstanceId: text("zapi_instance_id"),
+    zapiToken: text("zapi_token"),
+    zapiClientToken: text("zapi_client_token"),
+    // Meta Cloud API (oficial)
+    metaPhoneNumberId: text("meta_phone_number_id"),
+    metaAccessToken: text("meta_access_token"),
+    metaWabaId: text("meta_waba_id"),
+    metaVerifyToken: text("meta_verify_token"),
+    phoneDisplay: text("phone_display"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("sdrs_org_idx").on(t.orgId)]
+);

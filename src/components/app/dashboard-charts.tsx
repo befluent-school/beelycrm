@@ -6,6 +6,8 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -40,6 +42,37 @@ export function RevenueChart() {
         <Area type="monotone" dataKey="receita" stroke={BRAND} strokeWidth={2.5} fill="url(#rev)" name="Receita" />
         <Area type="monotone" dataKey="meta" stroke={META_LINE} strokeWidth={1.5} strokeDasharray="5 5" fill="transparent" name="Meta" />
       </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+/**
+ * Taxa de conversão por etapa vs. benchmark — Playbook Comercial Be Fluent v3, Seção 8.1.
+ * Cada barra é a % que avança de uma etapa para a próxima; vermelho quando abaixo do piso.
+ */
+export function StageConversionChart({
+  data,
+}: {
+  data: { label: string; conversionPct: number; expectedPct: number; floorPct: number }[];
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={Math.max(data.length * 46, 160)}>
+      <BarChart data={data} layout="vertical" margin={{ left: 40, right: 24, top: 4 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+        <XAxis type="number" domain={[0, 100]} unit="%" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
+        <YAxis type="category" dataKey="label" stroke="var(--muted-foreground)" fontSize={11} width={130} tickLine={false} axisLine={false} />
+        <Tooltip
+          cursor={{ fill: "var(--secondary)" }}
+          contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12 }}
+          formatter={(v) => `${Math.round(Number(v))}%`}
+        />
+        <ReferenceLine x={50} stroke={META_LINE} strokeDasharray="4 4" ifOverflow="extendDomain" />
+        <Bar dataKey="conversionPct" radius={[0, 6, 6, 0]} name="Conversão">
+          {data.map((d, i) => (
+            <Cell key={i} fill={d.conversionPct < d.floorPct ? "#ef4444" : d.conversionPct < d.expectedPct ? "#f59e0b" : "#22c55e"} />
+          ))}
+        </Bar>
+      </BarChart>
     </ResponsiveContainer>
   );
 }

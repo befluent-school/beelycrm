@@ -11,6 +11,8 @@
  * recente — em geral o próprio topo da lista.
  */
 
+import type { Sdr } from "@/lib/store";
+
 interface ZApiChat {
   phone: string;
   name?: string;
@@ -18,13 +20,36 @@ interface ZApiChat {
 }
 
 /**
+ * Credenciais Z-API a usar: as de um SDR específico (Inbox multi-SDR) ou,
+ * se omitido, as env vars globais (comportamento legado de instância única).
+ */
+interface ZApiCreds {
+  instanceId?: string;
+  token?: string;
+  clientToken?: string;
+}
+
+function credsFromSdr(sdr?: Sdr | null): ZApiCreds {
+  if (sdr) {
+    return {
+      instanceId: sdr.zapiInstanceId,
+      token: sdr.zapiToken,
+      clientToken: sdr.zapiClientToken,
+    };
+  }
+  return {
+    instanceId: process.env.ZAPI_INSTANCE_ID,
+    token: process.env.ZAPI_TOKEN,
+    clientToken: process.env.ZAPI_CLIENT_TOKEN,
+  };
+}
+
+/**
  * Busca o chat mais recente na instância Z-API e retorna seu telefone real.
  * Usado para mensagens fromMe=true que chegam com LID no campo phone.
  */
-export async function resolveRecentChatPhone(): Promise<{ phone: string; name?: string } | null> {
-  const instanceId = process.env.ZAPI_INSTANCE_ID;
-  const token       = process.env.ZAPI_TOKEN;
-  const clientToken = process.env.ZAPI_CLIENT_TOKEN;
+export async function resolveRecentChatPhone(sdr?: Sdr | null): Promise<{ phone: string; name?: string } | null> {
+  const { instanceId, token, clientToken } = credsFromSdr(sdr);
   if (!instanceId || !token) return null;
 
   try {

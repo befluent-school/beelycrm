@@ -20,7 +20,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { toast } from "sonner";
-import { useStore, useHydrated, DEFAULT_OWNER, type Deal, dealTemperature } from "@/lib/store";
+import { useStore, useHydrated, DEFAULT_OWNER, type Deal, type Stage, dealTemperature } from "@/lib/store";
+import { isStale } from "@/lib/pipeline-alerts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +33,7 @@ import { Label } from "@/components/ui/label";
 import { DealDrawer } from "./deal-drawer";
 import { QuickAdd } from "./quick-add";
 import { formatCurrency, cn } from "@/lib/utils";
-import { GripVertical, Plus, MoreVertical, Trophy, XCircle, Trash2, Check, Flame, Thermometer, Snowflake, UserPlus } from "lucide-react";
+import { GripVertical, Plus, MoreVertical, Trophy, XCircle, Trash2, Check, Flame, Thermometer, Snowflake, UserPlus, AlertTriangle } from "lucide-react";
 
 /* ── Temperatura do lead ─────────────────────────────────────── */
 const TEMP_CFG = {
@@ -197,7 +198,7 @@ export function KanbanBoard() {
                   onDelete={() => { if (confirm(`Excluir a etapa "${stage.name}"? Os negócios nela serão removidos.`)) deleteStage(pipeline.id, stage.id); }}
                 >
                   {stageDeals.map((d) => (
-                    <DealCard key={d.id} deal={d} onClick={() => setOpenDealId(d.id)} />
+                    <DealCard key={d.id} deal={d} stages={pipeline.stages} onClick={() => setOpenDealId(d.id)} />
                   ))}
                 </SortableColumn>
               );
@@ -208,7 +209,7 @@ export function KanbanBoard() {
         </SortableContext>
 
         <DragOverlay>
-          {activeDeal ? <DealCardView deal={activeDeal} dragging /> : null}
+          {activeDeal ? <DealCardView deal={activeDeal} stages={pipeline.stages} dragging /> : null}
         </DragOverlay>
       </DndContext>
 
@@ -313,24 +314,27 @@ function AddStageColumn({ onAdd }: { onAdd: (name: string) => void }) {
 }
 
 /* ── Card do deal ──────────────────────────────────────────────── */
-function DealCard({ deal, onClick }: { deal: Deal; onClick: () => void }) {
+function DealCard({ deal, stages, onClick }: { deal: Deal; stages: Stage[]; onClick: () => void }) {
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({ id: deal.id });
   return (
     <div ref={setNodeRef} className={cn(isDragging && "opacity-40")}>
-      <DealCardView deal={deal} onClick={onClick} dragHandle={listeners} dragAttrs={attributes as unknown as Record<string, unknown>} />
+      <DealCardView deal={deal} stages={stages} onClick={onClick} dragHandle={listeners} dragAttrs={attributes as unknown as Record<string, unknown>} />
     </div>
   );
 }
 
 function DealCardView({
-  deal, dragging, onClick, dragHandle, dragAttrs,
+  deal, stages, dragging, onClick, dragHandle, dragAttrs,
 }: {
-  deal: Deal; dragging?: boolean; onClick?: () => void;
+  deal: Deal; stages: Stage[]; dragging?: boolean; onClick?: () => void;
   dragHandle?: Record<string, unknown>; dragAttrs?: Record<string, unknown>;
 }) {
   const temp    = dealTemperature(deal);
   const tempCfg = TEMP_CFG[temp];
   const TempIcon = tempCfg.icon;
+  // Playbook 10.2 — regra dos 3 dias parados: "Negociação" ou "Proposta enviada" sem movimento.
+  const stale = isStale(deal, stages);
+  const sdr = useStore((s) => (deal.sdrId ? s.sdrs.find((x) => x.id === deal.sdrId) : undefined));
 
   return (
     <div
@@ -343,6 +347,8 @@ function DealCardView({
         // borda colorida pela temperatura
         temp === "hot"  && "border-l-2 border-l-orange-400/60",
         temp === "cold" && "border-l-2 border-l-blue-400/50",
+        // alerta dos 3 dias parados sobrepõe a cor de temperatura
+        stale && "border-l-2 border-l-red-500",
       )}
     >
       <div className="flex items-start gap-1.5">
@@ -356,9 +362,23 @@ function DealCardView({
             {deal.status === "lost" && <XCircle className="size-3 shrink-0 text-destructive" />}
           </div>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">{deal.contact}</p>
+          {stale && (
+            <span className="mt-1 inline-flex items-center gap-1 rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-red-400">
+              <AlertTriangle className="size-3" /> 3+ dias parado
+            </span>
+          )}
           <div className="mt-2 flex items-center justify-between gap-1">
             <span className="font-display text-sm font-bold text-primary">{formatCurrency(deal.value)}</span>
             <div className="flex items-center gap-1">
+              {sdr && (
+                <span
+                  className="flex size-4 shrink-0 items-center justify-center rounded-full text-[8px] font-bold text-white"
+                  style={{ background: sdr.avatarColor || "#E59313" }}
+                  title={`SDR: ${sdr.name}`}
+                >
+                  {sdr.name.slice(0, 1).toUpperCase()}
+                </span>
+              )}
               <TempIcon className={cn("size-3 shrink-0", tempCfg.class)} />
               {deal.tags?.[0] && <Badge variant="outline" className="text-[10px]">{deal.tags[0]}</Badge>}
             </div>

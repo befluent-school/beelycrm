@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useStore, type Contact } from "@/lib/store";
 import { initials, cn } from "@/lib/utils";
-import { Phone, Mail, MessageCircle, Trash2, X, MapPin, Briefcase, BarChart2, Megaphone } from "lucide-react";
+import { TransferLeadDialog } from "@/components/app/transfer-lead-dialog";
+import { Phone, Mail, MessageCircle, Trash2, X, MapPin, Briefcase, BarChart2, Megaphone, UserCog } from "lucide-react";
 
 export function ContactDrawer({ contactId, onClose }: { contactId: string | null; onClose: () => void }) {
   const contact = useStore((s) => s.contacts.find((c) => c.id === contactId)) ?? null;
@@ -105,6 +106,7 @@ function ContactDrawerInner({ contact, onClose }: { contact: Contact; onClose: (
   });
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags]         = useState<string[]>(contact.tags);
+  const [transferOpen, setTransferOpen] = useState(false);
 
   const dealsForContact = deals.filter((d) => d.contact === contact.name || d.contactId === contact.id);
   const activitiesForContact = activities.filter((a) => a.contact === contact.name);
@@ -178,6 +180,13 @@ function ContactDrawerInner({ contact, onClose }: { contact: Contact; onClose: (
                 {contact.status}
               </Badge>
             )}
+            <button
+              onClick={() => setTransferOpen(true)}
+              className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground/60 transition-colors hover:bg-primary/10 hover:text-primary"
+              title="Transferir para outro SDR"
+            >
+              <UserCog className="size-3.5" /> Transferir
+            </button>
           </div>
           <div className="mt-3 flex gap-2">
             {contact.phone && <Quick icon={Phone} label="Ligar" href={`tel:${contact.phone}`} />}
@@ -407,6 +416,13 @@ function ContactDrawerInner({ contact, onClose }: { contact: Contact; onClose: (
           </Tabs>
         </div>
       </SheetContent>
+
+      <TransferLeadDialog
+        contactId={contact.id}
+        contactName={contact.name}
+        open={transferOpen}
+        onOpenChange={setTransferOpen}
+      />
     </Sheet>
   );
 }

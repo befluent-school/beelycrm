@@ -9,7 +9,16 @@
  * genuína, e fechamento por convicção — nunca por insistência vazia.
  */
 
-export type InsightType = "interest" | "suggestion" | "objection" | "warning" | "strategy" | "closing";
+export type InsightType =
+  | "interest"
+  | "suggestion"
+  | "objection"
+  | "warning"
+  | "strategy"
+  | "closing"
+  // Playbook Comercial Be Fluent v3 (Seções 5.3 e 6.4)
+  | "cost_of_inaction"
+  | "avenida_do_nao";
 
 export interface SalesInsight {
   type:      InsightType;
@@ -103,6 +112,22 @@ const POSITIVE_ENGAGE = [
 ];
 const NEGATIVE_ENGAGE = [
   "ruim","horrível","não gostei","péssimo","chateado","decepcionado","frustrado",
+];
+
+/* ── Playbook Comercial Be Fluent v3 — sinais derivados ─────── */
+// Cost of Inaction (Seção 5.3): lead hesitando/adiando SEM objeção específica —
+// momento de fazer ELE calcular a perda de não agir.
+const COI_TRIGGER_SIGNALS = [
+  ...POSTPONE_SIGNALS,
+  ...COLD_SIGNALS,
+  "não sei se vale","será que vale","tá caro pra mim","não sei se compensa",
+  "vou avaliar","preciso pensar melhor","me dá um tempo","não é prioridade agora",
+];
+// Avenida do Não (Seção 6.4): recusa explícita — recusa é dado, não julgamento.
+const REFUSAL_SIGNALS = [
+  "não tenho interesse","não quero","não vou fechar","não vou seguir","deixa pra lá",
+  "não é pra mim","para de me mandar","não me chama mais","desisti","não quero mais",
+  "pode cancelar","não precisa mais","perdi o interesse","não faz sentido pra mim",
 ];
 
 /* ── Helpers ────────────────────────────────────────────────── */
@@ -520,6 +545,50 @@ export function analyzeConversation(ctx: ConversationContext): SalesInsight[] {
       title:    `${tempLabel} — Score ${contactScore}pts`,
       body:     `${fn} tem ${inMessages.length} msg${inMessages.length > 1 ? "s" : ""} recebidas, ${outMessages.length} enviadas. Score ${scoreLabel}. ${sentScore > 1 ? "Sentimento positivo — boa abertura." : sentScore < -1 ? "Sentimento negativo — aborde com cuidado." : "Sentimento neutro — faça uma pergunta de dor para aquecer."} Próximo passo: identifique o objetivo principal de ${fn} antes de qualquer oferta.`,
       tag:      `Temperatura: ${temp}`,
+    });
+  }
+
+  /* ═══ COST OF INACTION — Playbook Be Fluent v3, Seção 5.3 ══════
+   * O lead hesita/adia mas NÃO trouxe objeção concreta. Em vez de
+   * argumentar, conduza a sequência que faz o PRÓPRIO lead calcular
+   * quanto perde continuando como está. É onde ele fecha sozinho. */
+  const isCoiMoment = detectAll(allIn, COI_TRIGGER_SIGNALS) && !isBuying && !isPriceObj && !isCompetitor;
+  if (isCoiMoment) {
+    insights.push({
+      type:      "cost_of_inaction",
+      priority:  "high",
+      title:     "Cost of Inaction — faça o lead calcular a perda de não agir",
+      body:      `${fn} está adiando sem trazer uma objeção específica. "Vou pensar" pós-reunião é sintoma de diagnóstico incompleto. NÃO argumente mais nem apresente preço — conduza a sequência do Cost of Inaction e deixe o silêncio trabalhar depois de cada pergunta. Quando o lead chega no número sozinho, a decisão já está tomada antes da proposta.`,
+      tag:       "Diagnóstico: Cost of Inaction (Playbook 5.3)",
+      framework: "Playbook Comercial Be Fluent v3 — Seção 5.3 (COI)",
+      cta:       `1) "${fn}, hoje, sem o inglês resolvido, quantas oportunidades você estima que já deixou passar nos últimos 12 meses — vagas, projetos, promoções?"\n` +
+                 `2) "E se continuar assim por mais 1 ano, sem nada mudar — o que isso te custa, em dinheiro ou em posição de carreira?"\n` +
+                 `3) "Comparado a esse número que você me deu, o investimento mensal na Be Fluent parece caro, ou parece pequeno perto disso?" [silêncio]\n` +
+                 `4) "Então, pelo que você mesmo calculou, faz sentido resolver isso agora, ou prefere continuar pagando esse custo por mais tempo?"`,
+    });
+  }
+
+  /* ═══ AVENIDA DO NÃO — Playbook Be Fluent v3, Seção 6.4 ═══════
+   * Recusa é dado, não julgamento. 1ª recusa: 1 pergunta de
+   * aprofundamento, nunca fechamento na mesma mensagem. 2ª recusa:
+   * parar imediatamente de insistir — mensagem única de encerramento. */
+  const refusalHits = REFUSAL_SIGNALS.filter((s) => allIn.some((t) => t.toLowerCase().includes(s))).length;
+  if (refusalHits >= 1) {
+    const secondRefusal = refusalHits >= 2;
+    insights.push({
+      type:      "avenida_do_nao",
+      priority:  "high",
+      title:     secondRefusal
+        ? "2ª recusa — PARE de insistir agora, só encerramento educado"
+        : "1ª recusa — 1 pergunta de aprofundamento, nunca fechar na mesma mensagem",
+      body:      secondRefusal
+        ? `${fn} disse não pela segunda vez. Regra da Avenida do Não: parar imediatamente. NUNCA questionar a decisão do lead depois de um segundo "não" (erro real, conversa #18). Envie apenas a mensagem única de encerramento. A única ação permitida depois disso é follow-up de reengajamento distante no tempo (Follow 3 — reativação D+30/60).`
+        : `${fn} recusou. Um "não" não é sobre você — é timing, prioridade, orçamento, ou sinal de que não é o perfil de cliente ideal. Faça UMA pergunta de aprofundamento respeitosa e pare. Não insista em fechamento agora.`,
+      tag:       secondRefusal ? "Avenida do Não — 2ª recusa: encerrar" : "Avenida do Não — 1ª recusa: aprofundar",
+      framework: "Playbook Comercial Be Fluent v3 — Seção 6.4",
+      cta:       secondRefusal
+        ? `${fn}, tudo bem! Sem problemas — respeito seu momento. Fico à disposição quando fizer sentido. Um ótimo dia!`
+        : `${fn}, entendo. Só me ajuda a entender: o que especificamente ficou sem resposta pra você bater o martelo — foi o valor, o formato, ou o momento mesmo?`,
     });
   }
 

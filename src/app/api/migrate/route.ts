@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   const body: any = await req.json();
   const { pipelines = [], deals = [], contacts = [], activities = [],
           companies = [], automations = [], scoringRules = [],
-          connectedChannels = [], integrations = {}, financialConfig } = body;
+          connectedChannels = [], integrations = {}, financialConfig, sdrs = [] } = body;
 
   const errors: string[] = [];
 
@@ -97,6 +97,10 @@ export async function POST(req: Request) {
           discard_reason: c.discardReason ?? null, discard_desc: c.discardDesc ?? null,
           first_note: c.firstNote ?? null, first_task: c.firstTask ?? null,
           registered_at: c.registeredAt ?? null, external_id: c.externalId ?? null,
+          bant_budget: c.bantBudget ?? null, bant_authority: c.bantAuthority ?? null,
+          bant_need: c.bantNeed ?? null, bant_timing: c.bantTiming ?? null,
+          bant_note: c.bantNote ?? null, refusal_count: c.refusalCount ?? 0,
+          sdr_id: c.sdrId ?? null,
         }))
       );
       if (error) errors.push(`contacts batch ${i}: ${error.message}`);
@@ -115,6 +119,12 @@ export async function POST(req: Request) {
         lost_reason: d.lostReason ?? null, notes: d.notes ?? null,
         history: d.history ?? [], stage_entered_at: d.stageEnteredAt ?? null,
         created_at: d.createdAt,
+        sla_responded_at: d.slaRespondedAt ?? null,
+        cost_of_inaction_note: d.costOfInactionNote ?? null,
+        refusal_count: d.refusalCount ?? 0,
+        last_activity_at: d.lastActivityAt ?? null,
+        bant: d.bant ?? null,
+        sdr_id: d.sdrId ?? null,
       }))
     );
     if (error) errors.push(`deals: ${error.message}`);
@@ -202,9 +212,29 @@ export async function POST(req: Request) {
       avg_cost_per_student: financialConfig.avgCostPerStudent ?? 0,
       revenue_goal_monthly: financialConfig.revenueGoalMonthly ?? 0,
       leads_per_month: financialConfig.leadsPerMonth ?? 0,
+      sla_target_minutes: financialConfig.slaTargetMinutes ?? 4,
+      daily_targets: financialConfig.dailyTargets ?? null,
       updated_at: new Date().toISOString(),
     });
     if (error) errors.push(`financial_config: ${error.message}`);
+  }
+
+  // SDRs (WhatsApp Business por atendente)
+  if (sdrs.length > 0) {
+    const { error } = await supabase.from("sdrs").upsert(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sdrs.map((s: any) => ({
+        id: s.id, name: s.name, email: s.email ?? null,
+        avatar_color: s.avatarColor ?? null, active: s.active ?? true,
+        wa_provider: s.waProvider ?? null,
+        zapi_instance_id: s.zapiInstanceId ?? null, zapi_token: s.zapiToken ?? null,
+        zapi_client_token: s.zapiClientToken ?? null,
+        meta_phone_number_id: s.metaPhoneNumberId ?? null, meta_access_token: s.metaAccessToken ?? null,
+        meta_waba_id: s.metaWabaId ?? null, meta_verify_token: s.metaVerifyToken ?? null,
+        phone_display: s.phoneDisplay ?? null, created_at: s.createdAt,
+      }))
+    );
+    if (error) errors.push(`sdrs: ${error.message}`);
   }
 
   if (errors.length > 0) {

@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useStore, useHydrated } from "@/lib/store";
+import { COMERCIAL_BF_PIPELINE_ID } from "@/lib/demo-data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StageConversionChart } from "@/components/app/dashboard-charts";
 import { formatCurrency } from "@/lib/utils";
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -10,7 +12,7 @@ import {
 } from "recharts";
 import {
   Receipt, TrendingUp, Users, Target, CheckCircle2,
-  Clock, Phone, Mail, CalendarCheck, AlertCircle, CalendarX,
+  Clock, Phone, Mail, CalendarCheck, AlertCircle, CalendarX, GitBranch,
 } from "lucide-react";
 
 const BRAND = "#E59313";
@@ -154,6 +156,9 @@ function ComercialTab() {
         </Card>
       </div>
 
+      {/* Funil por etapa vs. benchmark + Retrospectiva semanal (Playbook 8.1 / 9.4) */}
+      <StageFunnelSection />
+
       {/* Negócios ganhos vs perdidos + motivos de perda */}
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
@@ -199,6 +204,189 @@ function ComercialTab() {
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+}
+
+/* ── Funil por etapa vs. benchmark — Playbook Comercial Be Fluent v3 (8.1 / 8.4 / 9.4) ── */
+function StageFunnelSection() {
+  const { deals, pipelines, stageBenchmarks } = useStore();
+
+  const analysis = useMemo(() => {
+    const pipeline =
+      pipelines.find((p) => p.id === COMERCIAL_BF_PIPELINE_ID) ?? pipelines[0];
+    if (!pipeline) return null;
+
+    // Etapas de "avanço" (exclui a última de fechamento e a de perdido).
+    const stages = pipeline.stages.filter(
+      (s) => !/perdido|frio/i.test(s.name)
+    );
+
+    const bench = new Map(stageBenchmarks.map((b) => [b.stageId, b]));
+
+    // Contagem "acumulada" por etapa: quantos deals já alcançaram cada etapa
+    // (via history + posição atual). Aproximação client-side sobre o store.
+    const reached = (stageIdx: number): number => {
+      const stageIds = stages.slice(stageIdx).map((s) => s.id);
+      const wonId = pipeline.stages.find((s) => /matr[ií]cula|fechad/i.test(s.name))?.id;
+      return deals.filter((d) => {
+        if (d.pipelineId !== pipeline.id) return false;
+        if (stageIds.includes(d.stageId)) return true;
+        if (wonId && stageIds.includes(wonId) && d.stageId === wonId) return true;
+        if (d.status === "won") return true; // ganho => passou por todas
+        return false;
+      }).length;
+    };
+
+    const rows = stages.slice(0, -1).map((s, i) => {
+      const cur = reached(i);
+      const nxt = reached(i + 1);
+      const conversionPct = cur > 0 ? (nxt / cur) * 100 : 0;
+      const b = bench.get(s.id);
+      return {
+        label: s.name,
+        stageId: s.id,
+        conversionPct,
+        expectedPct: b?.expectedConversionPct ?? 50,
+        floorPct: b?.alertFloorPct ?? 40,
+        cur,
+        nxt,
+      };
+    });
+
+    // Retrospectiva: taxa desta semana e da semana anterior por etapa,
+    // usando as entradas de history com timestamp para janelar.
+    const now = Date.now();
+    const weekMs = 7 * 86_400_000;
+    const windowRate = (s: { id: string }, sNext: { id: string }, from: number, to: number): number => {
+      const enteredInWindow = (stageId: string) =>
+        deals.filter((d) => {
+          if (d.pipelineId !== pipeline.id) return false;
+          const entries = [
+            ...(d.history ?? []).map((h) => ({ ts: h.ts, to: h.text })),
+          ];
+          // deal está na etapa e entrou nela na janela
+          if (d.stageId === stageId && d.stageEnteredAt) {
+            const t = new Date(d.stageEnteredAt).getTime();
+            if (t >= from && t < to) return true;
+          }
+          // ou há registro de history mencionando a etapa na janela
+          return entries.some((e) => {
+            const t = new Date(e.ts).getTime();
+            return t >= from && t < to && new RegExp(stageId, "i").test(e.to);
+          });
+        }).length;
+      const cur = enteredInWindow(s.id);
+      const nxt = enteredInWindow(sNext.id);
+      return cur > 0 ? (nxt / cur) * 100 : NaN;
+    };
+
+    const retro = stages.slice(0, -1).map((s, i) => {
+      const sNext = stages[i + 1];
+      const thisWeek = windowRate(s, sNext, now - weekMs, now);
+      const lastWeek = windowRate(s, sNext, now - 2 * weekMs, now - weekMs);
+      const floor = bench.get(s.id)?.alertFloorPct ?? 40;
+      const belowTwoWeeks =
+        Number.isFinite(thisWeek) && Number.isFinite(lastWeek) &&
+        thisWeek < floor && lastWeek < floor;
+      return { label: s.name, thisWeek, lastWeek, floor, belowTwoWeeks };
+    });
+
+    return { pipelineName: pipeline.name, rows, retro };
+  }, [deals, pipelines, stageBenchmarks]);
+
+  if (!analysis) return null;
+  const hasData = analysis.rows.some((r) => r.cur > 0);
+  const alerts = analysis.retro.filter((r) => r.belowTwoWeeks);
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <GitBranch className="size-4 text-primary" />
+            Conversão por etapa vs. benchmark
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            {analysis.pipelineName} · % que avança para a próxima etapa (Playbook 8.1). Linha tracejada = referência 50%.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {!hasData ? (
+            <p className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+              Sem negócios suficientes no funil para calcular as taxas.
+            </p>
+          ) : (
+            <StageConversionChart data={analysis.rows.map((r) => ({
+              label: r.label,
+              conversionPct: r.conversionPct,
+              expectedPct: r.expectedPct,
+              floorPct: r.floorPct,
+            }))} />
+          )}
+          {hasData && (
+            <ul className="mt-3 space-y-1.5">
+              {analysis.rows.map((r) => (
+                <li key={r.stageId} className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">{r.label} → próxima</span>
+                  <span className={
+                    r.cur === 0 ? "text-muted-foreground" :
+                    r.conversionPct < r.floorPct ? "font-semibold text-red-400" :
+                    r.conversionPct < r.expectedPct ? "font-semibold text-amber-400" :
+                    "font-semibold text-green-400"
+                  }>
+                    {r.cur === 0 ? "—" : `${Math.round(r.conversionPct)}%`}
+                    <span className="ml-1 text-muted-foreground">(meta {r.expectedPct}% · piso {r.floorPct}%)</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertCircle className={`size-4 ${alerts.length > 0 ? "text-red-400" : "text-muted-foreground"}`} />
+            Retrospectiva semanal
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Taxa por etapa nesta semana vs. semana anterior. Abaixo do piso 2 semanas seguidas = correção obrigatória (Playbook 9.4).
+          </p>
+        </CardHeader>
+        <CardContent>
+          {alerts.length > 0 && (
+            <div className="mb-3 space-y-1 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
+              {alerts.map((a) => (
+                <p key={a.label}>
+                  <strong>{a.label}</strong>: abaixo do piso ({a.floor}%) por 2 semanas — pauta obrigatória da reunião mensal.
+                </p>
+              ))}
+            </div>
+          )}
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border text-left text-muted-foreground">
+                <th className="py-2 font-medium">Etapa → próxima</th>
+                <th className="py-2 text-center font-medium">Semana atual</th>
+                <th className="py-2 text-center font-medium">Semana anterior</th>
+                <th className="py-2 text-center font-medium">Piso</th>
+              </tr>
+            </thead>
+            <tbody>
+              {analysis.retro.map((r) => (
+                <tr key={r.label} className="border-b border-border last:border-0">
+                  <td className="py-2">{r.label}</td>
+                  <td className="py-2 text-center">{Number.isFinite(r.thisWeek) ? `${Math.round(r.thisWeek)}%` : "—"}</td>
+                  <td className="py-2 text-center">{Number.isFinite(r.lastWeek) ? `${Math.round(r.lastWeek)}%` : "—"}</td>
+                  <td className="py-2 text-center text-muted-foreground">{r.floor}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
     </div>
   );
 }
