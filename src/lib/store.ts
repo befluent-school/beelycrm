@@ -235,11 +235,33 @@ export interface Company {
   notes?: string;
   owner: string;
 }
+/**
+ * Gatilhos e ações estruturados do motor de automação (executor real, não
+ * mais texto livre decorativo). "legacy" cobre automações antigas criadas
+ * antes desta mudança — continuam existindo/visíveis, mas o motor não as
+ * executa (não há como inferir gatilho/ação estruturado de um texto livre).
+ */
+export type AutomationTrigger =
+  | { type: "deal_won" }
+  | { type: "deal_stage_changed"; pipelineId: string; stageId: string }
+  | { type: "contact_created" }
+  | { type: "deal_stale"; days: number }
+  | { type: "legacy"; label: string };
+
+export type AutomationAction =
+  | { type: "schedule_meeting"; durationMinutes: number; title: string }
+  | { type: "move_deal_stage"; pipelineId: string; stageId: string }
+  | { type: "send_whatsapp"; scriptId: string }
+  | { type: "send_email"; scriptId: string }
+  | { type: "add_tag"; tag: string }
+  | { type: "add_score"; points: number }
+  | { type: "legacy"; label: string };
+
 export interface Automation {
   id: string;
   name: string;
-  trigger: string;
-  action: string;
+  trigger: AutomationTrigger;
+  action: AutomationAction;
   active: boolean;
 }
 export interface ScoringRule {
@@ -261,7 +283,7 @@ export interface SavedIntegration {
   credentials: Record<string, string>;
 }
 
-interface StoreState {
+export interface StoreState {
   pipelines: Pipeline[];
   deals: Deal[];
   contacts: Contact[];
@@ -323,6 +345,7 @@ interface StoreState {
   deleteCompany: (id: string) => void;
 
   addAutomation: (a: Omit<Automation, "id" | "active">) => void;
+  updateAutomation: (id: string, patch: Partial<Omit<Automation, "id">>) => void;
   toggleAutomation: (id: string) => void;
   deleteAutomation: (id: string) => void;
 
@@ -365,10 +388,10 @@ function seed() {
     owner: CONTACTS.find((c) => c.company === name)?.owner ?? DEMO_USER.name,
   }));
   const automations: Automation[] = [
-    { id: uid(), name: "Boas-vindas no WhatsApp", trigger: "Novo lead via WhatsApp", action: "Enviar mensagem + criar tarefa", active: true },
-    { id: uid(), name: "Mover para Qualificação", trigger: "Lead respondeu", action: "Mover negócio de etapa", active: true },
-    { id: uid(), name: "Alerta de negócio parado", trigger: "Sem atividade por 7 dias", action: "Notificar responsável", active: false },
-    { id: uid(), name: "Disparo N8N - lead quente", trigger: "Score >= 75", action: "Chamar webhook N8N", active: true },
+    { id: uid(), name: "Boas-vindas no WhatsApp", trigger: { type: "legacy", label: "Novo lead via WhatsApp" }, action: { type: "legacy", label: "Enviar mensagem + criar tarefa" }, active: true },
+    { id: uid(), name: "Mover para Qualificação", trigger: { type: "legacy", label: "Lead respondeu" }, action: { type: "legacy", label: "Mover negócio de etapa" }, active: true },
+    { id: uid(), name: "Alerta de negócio parado", trigger: { type: "deal_stale", days: 7 }, action: { type: "legacy", label: "Notificar responsável" }, active: false },
+    { id: uid(), name: "Disparo N8N - lead quente", trigger: { type: "legacy", label: "Score >= 75" }, action: { type: "legacy", label: "Chamar webhook N8N" }, active: true },
   ];
   const scoringRules: ScoringRule[] = [
     { id: uid(), label: "Abriu e-mail de proposta", points: 10 },
@@ -491,6 +514,7 @@ export const useStore = create<StoreState>()(
         void db.upsertDeal(newDeal);
       },
       moveDeal: (dealId, stageId) => {
+        const before = get().deals.find((d) => d.id === dealId);
         set((s) => ({
           deals: s.deals.map((d) => {
             if (d.id !== dealId || d.stageId === stageId) return d;
@@ -503,6 +527,12 @@ export const useStore = create<StoreState>()(
         }));
         const updated = get().deals.find((d) => d.id === dealId);
         if (updated) void db.upsertDeal(updated);
+        if (updated && before && before.stageId !== stageId) {
+          const contact = get().contacts.find((c) => c.id === updated.contactId || c.name === updated.contact);
+          void import("@/lib/automation-engine").then(({ runAutomations }) =>
+            runAutomations({ type: "deal_stage_changed", pipelineId: updated.pipelineId, stageId }, { deal: updated, contact }, get())
+          );
+        }
       },
       updateDeal: (dealId, patch) => {
         set((s) => ({ deals: s.deals.map((d) => (d.id === dealId ? { ...d, ...patch } : d)) }));
@@ -519,6 +549,12 @@ export const useStore = create<StoreState>()(
         }));
         const updated = get().deals.find((d) => d.id === dealId);
         if (updated) void db.upsertDeal(updated);
+        if (updated) {
+          const contact = get().contacts.find((c) => c.id === updated.contactId || c.name === updated.contact);
+          void import("@/lib/automation-engine").then(({ runAutomations }) =>
+            runAutomations({ type: "deal_won" }, { deal: updated, contact }, get())
+          );
+        }
       },
       loseDeal: (dealId, reason) => {
         set((s) => ({
@@ -545,7 +581,12 @@ export const useStore = create<StoreState>()(
           newContact = { ...c, id: uid() };
           return { contacts: [newContact, ...s.contacts] };
         });
-        if (newContact) void db.upsertContact(newContact);
+        if (newContact) {
+          void db.upsertContact(newContact);
+          void import("@/lib/automation-engine").then(({ runAutomations }) =>
+            runAutomations({ type: "contact_created" }, { contact: newContact! }, get())
+          );
+        }
       },
       addContacts: (cs) => {
         let newOnes: Contact[] = [];
@@ -561,7 +602,14 @@ export const useStore = create<StoreState>()(
           }
           return { contacts: [...newOnes, ...s.contacts] };
         });
-        if (newOnes.length > 0) void db.upsertContacts(newOnes);
+        if (newOnes.length > 0) {
+          void db.upsertContacts(newOnes);
+          // Importação em lote pode trazer centenas de contatos — não dispara
+          // automação por contato aqui para não estourar rate limit de
+          // WhatsApp/e-mail/Calendar; "novo lead" via import é intencionalmente
+          // silencioso (a automação de contact_created é para leads um a um,
+          // via formulário/webhook).
+        }
       },
       updateContact: (id, patch) => {
         set((s) => ({ contacts: s.contacts.map((c) => (c.id === id ? { ...c, ...patch } : c)) }));
@@ -748,6 +796,11 @@ export const useStore = create<StoreState>()(
         const newA: Automation = { ...a, id: uid(), active: true };
         set((s) => ({ automations: [newA, ...s.automations] }));
         void db.upsertAutomation(newA);
+      },
+      updateAutomation: (id, patch) => {
+        set((s) => ({ automations: s.automations.map((a) => (a.id === id ? { ...a, ...patch } : a)) }));
+        const updated = get().automations.find((a) => a.id === id);
+        if (updated) void db.upsertAutomation(updated);
       },
       toggleAutomation: (id) => {
         set((s) => ({ automations: s.automations.map((a) => (a.id === id ? { ...a, active: !a.active } : a)) }));

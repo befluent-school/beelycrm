@@ -358,17 +358,22 @@ const INTEGRATIONS: IntegrationDef[] = [
   /* ── Agenda & Reuniões ────────────────────────────────── */
   {
     id: "google_cal",
-    name: "Google Agenda",
-    description: "Sincroniza atividades e reuniões com o Google Calendar.",
+    name: "Google Agenda + Meet",
+    description: "Agenda reuniões direto do CRM com link do Google Meet gerado automaticamente.",
     category: "Agenda & Reuniões",
     LogoComponent: LogoGoogleCalendar,
-    connectMode: "credentials",
-    fields: [{ name: "oauth_client_id", label: "OAuth Client ID", placeholder: "xxx.apps.googleusercontent.com", required: true }],
+    connectMode: "oauth",
+    oauthStartPath: "/api/calendar/oauth/start",
     guideSteps: [
-      "No Google Cloud Console, ative a Google Calendar API.",
-      "Crie um ID do cliente OAuth 2.0 do tipo Aplicativo Web.",
-      "Cole o Client ID acima. A autorização acontece ao conectar.",
+      "Acesse console.cloud.google.com e selecione o mesmo projeto usado no Gmail (Remarketing), ou crie um novo.",
+      "Em APIs e Serviços > Biblioteca, ative a Google Calendar API.",
+      "No mesmo ID do cliente OAuth 2.0 do Gmail (ou um novo), adicione o URI de redirecionamento exibido abaixo.",
+      "Na Tela de consentimento OAuth, adicione o escopo .../auth/calendar.events.",
+      "Defina GOOGLE_OAUTH_CLIENT_ID e GOOGLE_OAUTH_CLIENT_SECRET no ambiente (mesmas variáveis do Gmail) e reinicie.",
+      "Clique em Conectar abaixo e autorize com a conta Google que vai criar os eventos.",
     ],
+    guideLink: "https://console.cloud.google.com/apis/library/calendar-json.googleapis.com",
+    guideLinkLabel: "Abrir Google Cloud Console",
   },
   {
     id: "calendly",
@@ -552,6 +557,13 @@ function ConfigModal({
             <div className="space-y-1.5">
               <Label>URI de redirecionamento autorizado (cole no Google Cloud Console)</Label>
               <CopyField value={`${appUrl}/api/remarketing/oauth/callback`} />
+            </div>
+          )}
+
+          {integration.id === "google_cal" && (
+            <div className="space-y-1.5">
+              <Label>URI de redirecionamento autorizado (cole no Google Cloud Console)</Label>
+              <CopyField value={`${appUrl}/api/calendar/oauth/callback`} />
             </div>
           )}
 

@@ -9,10 +9,34 @@
 import { supabase } from "@/lib/supabase";
 import type {
   Pipeline, Deal, Contact, Activity, Company,
-  Automation, ScoringRule, ConnectedChannel, SavedIntegration, FinancialConfig, Sdr,
+  Automation, AutomationTrigger, AutomationAction, ScoringRule, ConnectedChannel, SavedIntegration, FinancialConfig, Sdr,
 } from "@/lib/store";
 
 /* ── Helpers de conversão ─────────────────────────────────── */
+
+/**
+ * trigger/action de Automation viraram objetos estruturados (motor real de
+ * execução). A coluna no banco continua TEXT — grava JSON.stringify e lê de
+ * volta com JSON.parse. Automações criadas antes dessa mudança tinham texto
+ * livre nessas colunas (ex.: "Novo lead criado"); como não é JSON válido,
+ * o parse cai no fallback "legacy" — continuam existindo e visíveis, só não
+ * são mais executadas pelo motor (não há como inferir gatilho/ação
+ * estruturado de uma frase livre).
+ */
+function parseAutomationTrigger(raw: string): AutomationTrigger {
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && "type" in parsed) return parsed as AutomationTrigger;
+  } catch { /* não era JSON — automação antiga em texto livre */ }
+  return { type: "legacy", label: raw };
+}
+function parseAutomationAction(raw: string): AutomationAction {
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && "type" in parsed) return parsed as AutomationAction;
+  } catch { /* não era JSON — automação antiga em texto livre */ }
+  return { type: "legacy", label: raw };
+}
 
 // snake_case do banco → camelCase do store
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -404,8 +428,10 @@ export async function loadAll(): Promise<DbSnapshot | null> {
       })),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       automations:       (automations ?? []).map((r: any) => ({
-        id: r.id, name: r.name, trigger: r.trigger ?? "",
-        action: r.action ?? "", active: r.active ?? true,
+        id: r.id, name: r.name,
+        trigger: parseAutomationTrigger(r.trigger ?? ""),
+        action: parseAutomationAction(r.action ?? ""),
+        active: r.active ?? true,
       })),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       scoringRules:      (scoringRules ?? []).map((r: any) => ({
@@ -450,7 +476,7 @@ export async function seedSupabase(snapshot: DbSnapshot): Promise<void> {
         snapshot.companies.map((c) => ({ id: c.id, name: c.name, domain: c.domain ?? null, phone: c.phone ?? null, segment: c.segment ?? null, notes: c.notes ?? null, owner: c.owner }))
       ),
       supabase.from("automations").upsert(
-        snapshot.automations.map((a) => ({ id: a.id, name: a.name, trigger: a.trigger, action: a.action, active: a.active }))
+        snapshot.automations.map((a) => ({ id: a.id, name: a.name, trigger: JSON.stringify(a.trigger), action: JSON.stringify(a.action), active: a.active }))
       ),
       supabase.from("scoring_rules").upsert(
         snapshot.scoringRules.map((r) => ({ id: r.id, label: r.label, points: r.points }))
@@ -549,7 +575,9 @@ export const db = {
 
   // ── Automations ────────────────────────────────────────────
   upsertAutomation: async (a: Automation) => {
-    const { error } = await supabase.from("automations").upsert({ id: a.id, name: a.name, trigger: a.trigger, action: a.action, active: a.active });
+    const { error } = await supabase.from("automations").upsert({
+      id: a.id, name: a.name, trigger: JSON.stringify(a.trigger), action: JSON.stringify(a.action), active: a.active,
+    });
     logErr("automations", "upsert", error);
   },
   deleteAutomation: async (id: string) => {

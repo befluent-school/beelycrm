@@ -14,6 +14,11 @@ export const env = {
   remarketingFromEmail: process.env.REMARKETING_FROM_EMAIL ?? "befluentschooll@gmail.com",
   remarketingFromName: process.env.REMARKETING_FROM_NAME ?? "Be Fluent",
 
+  /* ─── Google Calendar + Meet (mesmo client OAuth do Gmail) ─── */
+  googleCalendarRedirectUri:
+    process.env.GOOGLE_CALENDAR_REDIRECT_URI ??
+    `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/api/calendar/oauth/callback`,
+
   /* ─── Resend (fallback opcional de volume) ─────────────── */
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   resendFromEmail: process.env.RESEND_FROM_EMAIL ?? process.env.EMAIL_FROM ?? "",

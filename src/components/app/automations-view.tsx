@@ -11,34 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Plus, Zap, ArrowRight, Webhook, Trash2, Pencil, X, TrendingUp, TrendingDown, Star, Clock, MessageCircle, Mail, MousePointer, UserCheck, Save, Loader2, Repeat, CalendarClock, BookOpen, Phone, Copy, ShieldQuestion, Handshake, Flame as FlameIcon, Megaphone } from "lucide-react";
-import { useStore, useHydrated } from "@/lib/store";
+import { useStore, useHydrated, type Automation, type AutomationTrigger, type AutomationAction } from "@/lib/store";
 import { SITUATION_LABELS, type FollowupSituation } from "@/lib/followup-playbook-labels";
 import { SCRIPT_CATEGORY_LABELS, type Script, type ScriptCategory } from "@/lib/scripts-store";
 import { cn } from "@/lib/utils";
 
-const TRIGGERS = [
-  "Novo lead criado",
-  "Lead via WhatsApp",
-  "Lead respondeu",
-  "Negócio mudou de etapa",
-  "Score ≥ 75",
-  "Sem atividade por 7 dias",
-  "Formulário enviado",
-  "Compra realizada",
-  "Reunião confirmada",
-  "Reunião não compareceu (no-show)",
-];
-const ACTIONS = [
-  "Enviar mensagem WhatsApp",
-  "Enviar e-mail",
-  "Criar tarefa",
-  "Mover negócio de etapa",
-  "Notificar responsável",
-  "Chamar webhook N8N",
-  "Adicionar tag",
-  "Adicionar pontos de score",
-  "Remover pontos de score",
-];
 
 /* ── Tipos de evento para scoring automático ──────────────── */
 interface ScoringEvent {
@@ -114,50 +91,200 @@ const FIELD_TYPE_LABELS: Record<FormField["type"], string> = {
   text: "Texto", email: "E-mail", phone: "Telefone", select: "Seleção", textarea: "Área de texto",
 };
 
-/* ── Dialog de automação (criar / editar) ──────────────────── */
+/* ── Rótulos e opções dos gatilhos/ações estruturados do motor real ── */
+const TRIGGER_TYPE_LABELS: Record<Exclude<AutomationTrigger["type"], "legacy">, string> = {
+  deal_won: "Negócio ganho",
+  deal_stage_changed: "Negócio mudou de etapa",
+  contact_created: "Novo lead / contato criado",
+  deal_stale: "Sem atividade há N dias",
+};
+const ACTION_TYPE_LABELS: Record<Exclude<AutomationAction["type"], "legacy">, string> = {
+  schedule_meeting: "Agendar reunião no Google Calendar + Meet",
+  move_deal_stage: "Mover negócio de etapa",
+  send_whatsapp: "Enviar WhatsApp (via SDR)",
+  send_email: "Enviar e-mail (Remarketing)",
+  add_tag: "Adicionar tag",
+  add_score: "Adicionar pontos de score",
+};
+
+function describeTrigger(t: AutomationTrigger, pipelines: { id: string; name: string; stages: { id: string; name: string }[] }[]): string {
+  switch (t.type) {
+    case "deal_won": return "Negócio ganho";
+    case "deal_stage_changed": {
+      const p = pipelines.find((p) => p.id === t.pipelineId);
+      const s = p?.stages.find((s) => s.id === t.stageId);
+      return `Entrou em "${s?.name ?? t.stageId}"${p ? ` (${p.name})` : ""}`;
+    }
+    case "contact_created": return "Novo lead criado";
+    case "deal_stale": return `Sem atividade há ${t.days} dias`;
+    case "legacy": return t.label;
+  }
+}
+function describeAction(a: AutomationAction, pipelines: { id: string; name: string; stages: { id: string; name: string }[] }[], scripts: Script[]): string {
+  switch (a.type) {
+    case "schedule_meeting": return `Agendar reunião (${a.durationMinutes} min) no Google Calendar`;
+    case "move_deal_stage": {
+      const p = pipelines.find((p) => p.id === a.pipelineId);
+      const s = p?.stages.find((s) => s.id === a.stageId);
+      return `Mover para "${s?.name ?? a.stageId}"`;
+    }
+    case "send_whatsapp": return `Enviar WhatsApp: ${scripts.find((s) => s.id === a.scriptId)?.title ?? "script"}`;
+    case "send_email": return `Enviar e-mail: ${scripts.find((s) => s.id === a.scriptId)?.title ?? "script"}`;
+    case "add_tag": return `Adicionar tag "${a.tag}"`;
+    case "add_score": return `${a.points >= 0 ? "+" : ""}${a.points} pontos de score`;
+    case "legacy": return a.label;
+  }
+}
+
+/* ── Dialog de automação (criar / editar) — motor real, gatilho/ação estruturados ── */
 function AutomationDialog({
   initial,
   open,
   onOpenChange,
   onSave,
 }: {
-  initial?: { name: string; trigger: string; action: string };
+  initial?: Automation | null;
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  onSave: (a: { name: string; trigger: string; action: string }) => void;
+  onSave: (a: { name: string; trigger: AutomationTrigger; action: AutomationAction }) => void;
 }) {
+  const pipelines = useStore((s) => s.pipelines);
+  const [scripts, setScripts] = useState<Script[]>([]);
+  const [triggerType, setTriggerType] = useState<AutomationTrigger["type"]>(
+    initial && initial.trigger.type !== "legacy" ? initial.trigger.type : "deal_won"
+  );
+  const [actionType, setActionType] = useState<AutomationAction["type"]>(
+    initial && initial.action.type !== "legacy" ? initial.action.type : "move_deal_stage"
+  );
+
+  useEffect(() => {
+    if (open) fetch("/api/scripts").then((r) => r.json()).then(setScripts).catch(() => setScripts([]));
+  }, [open]);
+
+  const t0 = initial?.trigger;
+  const a0 = initial?.action;
+  const defaultPipeline = pipelines[0];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{initial ? "Editar automação" : "Nova automação"}</DialogTitle>
-          <DialogDescription>Defina o gatilho e a ação executada automaticamente.</DialogDescription>
+          <DialogDescription>Motor real: quando o gatilho acontece, a ação é executada automaticamente.</DialogDescription>
         </DialogHeader>
         <form
-          className="space-y-3"
+          className="space-y-4 max-h-[65vh] overflow-y-auto pr-1"
           onSubmit={(e) => {
             e.preventDefault();
             const f = new FormData(e.currentTarget);
-            onSave({ name: String(f.get("name")), trigger: String(f.get("trigger")), action: String(f.get("action")) });
+            const name = String(f.get("name"));
+
+            let trigger: AutomationTrigger;
+            if (triggerType === "deal_stage_changed") {
+              trigger = { type: "deal_stage_changed", pipelineId: String(f.get("trigger_pipelineId")), stageId: String(f.get("trigger_stageId")) };
+            } else if (triggerType === "deal_stale") {
+              trigger = { type: "deal_stale", days: Number(f.get("trigger_days")) || 7 };
+            } else {
+              trigger = { type: triggerType } as AutomationTrigger;
+            }
+
+            let action: AutomationAction;
+            if (actionType === "move_deal_stage") {
+              action = { type: "move_deal_stage", pipelineId: String(f.get("action_pipelineId")), stageId: String(f.get("action_stageId")) };
+            } else if (actionType === "schedule_meeting") {
+              action = { type: "schedule_meeting", durationMinutes: Number(f.get("action_duration")) || 30, title: String(f.get("action_title") || "Reunião — {{primeiroNome}}") };
+            } else if (actionType === "send_whatsapp") {
+              action = { type: "send_whatsapp", scriptId: String(f.get("action_scriptId")) };
+            } else if (actionType === "send_email") {
+              action = { type: "send_email", scriptId: String(f.get("action_scriptId")) };
+            } else if (actionType === "add_tag") {
+              action = { type: "add_tag", tag: String(f.get("action_tag") || "") };
+            } else {
+              action = { type: "add_score", points: Number(f.get("action_points")) || 10 };
+            }
+
+            onSave({ name, trigger, action });
             onOpenChange(false);
           }}
         >
           <div className="space-y-1.5">
             <Label>Nome</Label>
-            <Input name="name" required placeholder="Ex: Boas-vindas WhatsApp" defaultValue={initial?.name} />
+            <Input name="name" required placeholder="Ex: Agendar onboarding ao ganhar negócio" defaultValue={initial?.name} />
           </div>
-          <div className="space-y-1.5">
+
+          <div className="space-y-1.5 rounded-lg border border-border p-3">
             <Label>Quando (gatilho)</Label>
-            <select name="trigger" defaultValue={initial?.trigger ?? TRIGGERS[0]} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-              {TRIGGERS.map((t) => <option key={t}>{t}</option>)}
+            <select
+              value={triggerType}
+              onChange={(e) => setTriggerType(e.target.value as AutomationTrigger["type"])}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              {(Object.keys(TRIGGER_TYPE_LABELS) as (keyof typeof TRIGGER_TYPE_LABELS)[]).map((t) => (
+                <option key={t} value={t}>{TRIGGER_TYPE_LABELS[t]}</option>
+              ))}
             </select>
+
+            {triggerType === "deal_stage_changed" && (
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <select name="trigger_pipelineId" defaultValue={t0?.type === "deal_stage_changed" ? t0.pipelineId : defaultPipeline?.id} className="h-9 rounded-md border border-input bg-background px-2 text-xs">
+                  {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <select name="trigger_stageId" defaultValue={t0?.type === "deal_stage_changed" ? t0.stageId : defaultPipeline?.stages[0]?.id} className="h-9 rounded-md border border-input bg-background px-2 text-xs">
+                  {(pipelines.find((p) => p.id === (t0?.type === "deal_stage_changed" ? t0.pipelineId : defaultPipeline?.id))?.stages ?? []).map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {triggerType === "deal_stale" && (
+              <Input name="trigger_days" type="number" min={1} defaultValue={t0?.type === "deal_stale" ? t0.days : 7} placeholder="Dias sem atividade" className="h-9" />
+            )}
           </div>
-          <div className="space-y-1.5">
+
+          <div className="space-y-1.5 rounded-lg border border-border p-3">
             <Label>Então (ação)</Label>
-            <select name="action" defaultValue={initial?.action ?? ACTIONS[0]} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-              {ACTIONS.map((a) => <option key={a}>{a}</option>)}
+            <select
+              value={actionType}
+              onChange={(e) => setActionType(e.target.value as AutomationAction["type"])}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              {(Object.keys(ACTION_TYPE_LABELS) as (keyof typeof ACTION_TYPE_LABELS)[]).map((a) => (
+                <option key={a} value={a}>{ACTION_TYPE_LABELS[a]}</option>
+              ))}
             </select>
+
+            {actionType === "move_deal_stage" && (
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <select name="action_pipelineId" defaultValue={a0?.type === "move_deal_stage" ? a0.pipelineId : defaultPipeline?.id} className="h-9 rounded-md border border-input bg-background px-2 text-xs">
+                  {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <select name="action_stageId" defaultValue={a0?.type === "move_deal_stage" ? a0.stageId : defaultPipeline?.stages[0]?.id} className="h-9 rounded-md border border-input bg-background px-2 text-xs">
+                  {(pipelines.find((p) => p.id === (a0?.type === "move_deal_stage" ? a0.pipelineId : defaultPipeline?.id))?.stages ?? []).map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {actionType === "schedule_meeting" && (
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <Input name="action_title" placeholder="Título — use {{primeiroNome}}" defaultValue={a0?.type === "schedule_meeting" ? a0.title : "Reunião — {{primeiroNome}}"} className="h-9" />
+                <Input name="action_duration" type="number" min={15} step={15} placeholder="Minutos" defaultValue={a0?.type === "schedule_meeting" ? a0.durationMinutes : 30} className="h-9" />
+              </div>
+            )}
+            {(actionType === "send_whatsapp" || actionType === "send_email") && (
+              <select name="action_scriptId" defaultValue={(a0?.type === "send_whatsapp" || a0?.type === "send_email") ? a0.scriptId : scripts[0]?.id} className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs">
+                {scripts.length === 0 && <option value="">Nenhum script na biblioteca — crie um na aba Playbook</option>}
+                {scripts.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+              </select>
+            )}
+            {actionType === "add_tag" && (
+              <Input name="action_tag" placeholder="Ex: onboarding-agendado" defaultValue={a0?.type === "add_tag" ? a0.tag : ""} className="h-9" />
+            )}
+            {actionType === "add_score" && (
+              <Input name="action_points" type="number" placeholder="Pontos (negativo para subtrair)" defaultValue={a0?.type === "add_score" ? a0.points : 10} className="h-9" />
+            )}
           </div>
+
           <Button type="submit" className="w-full">{initial ? "Salvar alterações" : "Criar automação"}</Button>
         </form>
       </DialogContent>
@@ -334,11 +461,13 @@ function FormEditorDialog({
 /* ── View principal ────────────────────────────────────────── */
 export function AutomationsView() {
   const hydrated = useHydrated();
-  const { automations, scoringRules, addAutomation, toggleAutomation, deleteAutomation, updateDeal, addScoringRule, deleteScoringRule } = useStore();
+  const { automations, scoringRules, pipelines, addAutomation, updateAutomation, toggleAutomation, deleteAutomation, updateDeal, addScoringRule, deleteScoringRule } = useStore();
+  const [autoScripts, setAutoScripts] = useState<Script[]>([]);
+  useEffect(() => { fetch("/api/scripts").then((r) => r.json()).then(setAutoScripts).catch(() => setAutoScripts([])); }, []);
 
   // Automações
   const [autoDialog, setAutoDialog]     = useState(false);
-  const [editingAuto, setEditingAuto]   = useState<typeof automations[0] | null>(null);
+  const [editingAuto, setEditingAuto]   = useState<Automation | null>(null);
 
   // Scoring
   const [scoreDialog, setScoreDialog]   = useState(false);
@@ -351,9 +480,9 @@ export function AutomationsView() {
   const [formDialog, setFormDialog]     = useState(false);
   const [editingForm, setEditingForm]   = useState<FormDef | null>(null);
 
-  function handleSaveAuto(data: { name: string; trigger: string; action: string }) {
+  function handleSaveAuto(data: { name: string; trigger: AutomationTrigger; action: AutomationAction }) {
     if (editingAuto) {
-      // Editar existente via store (update deal equivalente não existe para automações, então atualizamos localmente)
+      updateAutomation(editingAuto.id, data);
       toast.success("Automação atualizada!");
     } else {
       addAutomation(data);
@@ -420,9 +549,12 @@ export function AutomationsView() {
                 </div>
                 <p className="mt-3 font-display font-semibold">{a.name}</p>
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <Badge variant="secondary">{a.trigger}</Badge>
+                  <Badge variant="secondary">{describeTrigger(a.trigger, pipelines)}</Badge>
                   <ArrowRight className="size-3" />
-                  <Badge variant="outline">{a.action}</Badge>
+                  <Badge variant="outline">{describeAction(a.action, pipelines, autoScripts)}</Badge>
+                  {(a.trigger.type === "legacy" || a.action.type === "legacy") && (
+                    <Badge variant="outline" className="text-[10px] opacity-70">não executa (formato antigo)</Badge>
+                  )}
                 </div>
               </CardContent>
             </Card>
