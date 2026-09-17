@@ -9,6 +9,9 @@ import {
   useSensors,
   useDroppable,
   useDraggable,
+  pointerWithin,
+  rectIntersection,
+  type CollisionDetection,
   type DragStartEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
@@ -56,6 +59,20 @@ export function KanbanBoard() {
   const [addDealStage, setAddDealStage] = useState<string | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  // rectIntersection (o padrão do DndContext) exige que os retângulos se
+  // sobreponham de verdade — falha com frequência aqui porque as colunas de
+  // deals são scrolláveis e ficam com pouca área livre, então soltar perto
+  // da borda de um card resultava em over=null e o drop era silenciosamente
+  // ignorado (o bug relatado: "arrastar não funciona"). pointerWithin usa a
+  // posição do ponteiro em vez de sobreposição de área, com fallback para
+  // rectIntersection quando nada está sob o ponteiro (ex.: soltar numa
+  // coluna vazia, fora da área exata dos elementos internos).
+  const collisionDetection: CollisionDetection = (args) => {
+    const pointerHits = pointerWithin(args);
+    if (pointerHits.length > 0) return pointerHits;
+    return rectIntersection(args);
+  };
 
   const pipeline = useMemo(
     () => pipelines.find((p) => p.id === selectedId) ?? pipelines[0],
@@ -179,7 +196,7 @@ export function KanbanBoard() {
       <p className="text-center text-[11px] text-muted-foreground/50 sm:hidden">← Deslize para ver todas as etapas →</p>
 
       {/* Board com duplo DndContext (colunas + deals) */}
-      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <SortableContext items={colDragIds} strategy={horizontalListSortingStrategy}>
           <div className="flex gap-3 overflow-x-auto pb-4 sm:gap-4" style={{ scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}>
             {pipeline.stages.map((stage) => {
@@ -315,9 +332,14 @@ function AddStageColumn({ onAdd }: { onAdd: (name: string) => void }) {
 
 /* ── Card do deal ──────────────────────────────────────────────── */
 function DealCard({ deal, stages, onClick }: { deal: Deal; stages: Stage[]; onClick: () => void }) {
-  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({ id: deal.id });
+  const { setNodeRef: setDragRef, listeners, attributes, isDragging } = useDraggable({ id: deal.id });
+  // Também precisa ser droppable: sem isso, soltar em cima de outro card
+  // nunca resolvia `over` para esse deal (só a coluna inteira era um alvo
+  // válido), então largar perto da borda de um card — o caso mais comum
+  // numa coluna cheia — não movia nada.
+  const { setNodeRef: setDropRef } = useDroppable({ id: deal.id });
   return (
-    <div ref={setNodeRef} className={cn(isDragging && "opacity-40")}>
+    <div ref={(node) => { setDragRef(node); setDropRef(node); }} className={cn(isDragging && "opacity-40")}>
       <DealCardView deal={deal} stages={stages} onClick={onClick} dragHandle={listeners} dragAttrs={attributes as unknown as Record<string, unknown>} />
     </div>
   );
