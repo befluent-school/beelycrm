@@ -47,11 +47,13 @@ export async function GET() {
     execSql: { available: boolean; error?: string };
     tables: Record<string, { exists: boolean; count?: number; error?: string }>;
     anonWrite: { ok: boolean; error?: string; hint?: string };
+    anonWriteByTable: Record<string, { ok: boolean; error?: string }>;
   } = {
     ok: true,
     execSql: { available: false },
     tables: {},
     anonWrite: { ok: false },
+    anonWriteByTable: {},
   };
 
   // 1. Testa se a função RPC exec_sql existe — pré-requisito de TODO o
@@ -96,6 +98,40 @@ export async function GET() {
       result.anonWrite = { ok: true };
       // Limpa a linha de teste (via service role, sem depender de RLS).
       await supabase.from("sdrs").delete().eq("id", testId);
+    }
+  }
+
+  // 4. Mesmo teste, mas em contacts/deals — tabelas antigas que nunca
+  // passaram pela correção de RLS da seção 7 (supabase-setup.sql), porque
+  // eram assumidas como "sem RLS" por serem anteriores ao Inbox multi-SDR.
+  // Se a importação de leads "aparece e some", é RLS bloqueando aqui.
+  if (anonKey) {
+    const anonClient = createClient(url, anonKey);
+
+    if (result.tables.contacts?.exists) {
+      const testId = `__diagnostic_contact_${Date.now()}`;
+      const { error } = await anonClient.from("contacts").insert({ id: testId, name: "__diagnostic__", score: 0, tags: [] });
+      if (error) {
+        result.anonWriteByTable.contacts = { ok: false, error: error.message };
+        result.ok = false;
+      } else {
+        result.anonWriteByTable.contacts = { ok: true };
+        await supabase.from("contacts").delete().eq("id", testId);
+      }
+    }
+
+    if (result.tables.deals?.exists) {
+      const testId = `__diagnostic_deal_${Date.now()}`;
+      const { error } = await anonClient.from("deals").insert({
+        id: testId, title: "__diagnostic__", value: 0, pipeline_id: "__diagnostic__", stage_id: "__diagnostic__", contact: "__diagnostic__", owner: "__diagnostic__",
+      });
+      if (error) {
+        result.anonWriteByTable.deals = { ok: false, error: error.message };
+        result.ok = false;
+      } else {
+        result.anonWriteByTable.deals = { ok: true };
+        await supabase.from("deals").delete().eq("id", testId);
+      }
     }
   }
 
