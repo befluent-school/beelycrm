@@ -62,6 +62,18 @@ export async function handleWhatsApp(payload: unknown, sdr?: Sdr | null) {
   };
   const sdrId = sdr?.id;
 
+  /* Z-API: além de ReceivedCallback (mensagem de verdade), a mesma URL de
+   * webhook ("Ao enviar"/"Ao receber") também recebe DeliveryCallback,
+   * ReadCallback, MessageStatusCallback etc. — confirmações de entrega/leitura
+   * que têm phone/messageId/momment mas NENHUM texto nem fromMe. Sem esse
+   * filtro, cada confirmação de entrega virava uma mensagem fantasma
+   * "(mensagem sem texto)" na conversa. Só ReceivedCallback é conteúdo real.
+   */
+  if (p.type && p.type !== "ReceivedCallback") {
+    console.log(`[WhatsApp/Z-API] evento ignorado (não é mensagem): ${p.type}`);
+    return;
+  }
+
   /* Z-API: mensagem recebida diretamente no root do payload */
   if (p.phone && !p.object) {
     const fromMe = p.fromMe ?? false;

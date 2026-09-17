@@ -21,6 +21,7 @@ interface InboxMessage {
   text: string;
   timestamp: number;
   fromMe?: boolean;
+  senderPhoto?: string;
   msgType?: "text" | "image" | "audio" | "document" | "video";
   mediaUrl?: string;
   mediaCaption?: string;
@@ -35,10 +36,32 @@ interface Thread {
   sdrId?: string;
   phone: string;
   contactName: string;
+  contactPhoto?: string;
   lastText: string;
   lastTimestamp: number;
   lastFromMe: boolean;
   unread: number;
+}
+
+/** Avatar estilo WhatsApp: foto do contato quando disponível, senão iniciais. */
+function ContactAvatar({ name, photo, size = "size-9" }: { name: string; photo?: string; size?: string }) {
+  const [broken, setBroken] = useState(false);
+  if (photo && !broken) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- fotos de perfil do WhatsApp (domínio externo pps.whatsapp.net), sem otimização
+      <img
+        src={photo}
+        alt={name}
+        className={cn(size, "shrink-0 rounded-full object-cover")}
+        onError={() => setBroken(true)}
+      />
+    );
+  }
+  return (
+    <span className={cn(size, "flex shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-primary")}>
+      {initials(name)}
+    </span>
+  );
 }
 
 const POLL_MS = 8000;
@@ -114,10 +137,16 @@ export function InboxView() {
       if (!existing || m.timestamp >= existing.lastTimestamp) {
         byThread.set(key, {
           threadKey: key, sdrId: m.sdrId, phone: m.from,
-          contactName: m.fromName || m.from, lastText: m.text,
+          contactName: m.fromName || m.from,
+          contactPhoto: m.senderPhoto || existing?.contactPhoto,
+          lastText: m.text,
           lastTimestamp: m.timestamp, lastFromMe: m.fromMe ?? false,
           unread: existing?.unread ?? 0,
         });
+      } else if (m.senderPhoto && !existing.contactPhoto) {
+        // Mensagens fromMe (enviadas por nós) não carregam senderPhoto do lead —
+        // preserva a foto já vista em outra mensagem da mesma thread.
+        existing.contactPhoto = m.senderPhoto;
       }
     }
     const lastOut = new Map<string, number>();
@@ -292,9 +321,7 @@ export function InboxView() {
                     activeThread === t.threadKey && "bg-primary/10"
                   )}
                 >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-primary">
-                    {initials(t.contactName)}
-                  </span>
+                  <ContactAvatar name={t.contactName} photo={t.contactPhoto} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <p className="truncate text-sm font-medium">{t.contactName}</p>
@@ -328,9 +355,7 @@ export function InboxView() {
               <Button variant="ghost" size="icon" className="size-8 shrink-0 md:hidden" onClick={() => setActiveThread(null)}>
                 <ArrowLeft className="size-4" />
               </Button>
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-primary">
-                {initials(currentThread.contactName)}
-              </span>
+              <ContactAvatar name={currentThread.contactName} photo={currentThread.contactPhoto} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{currentThread.contactName}</p>
                 <p className="truncate text-xs text-muted-foreground">
@@ -347,12 +372,22 @@ export function InboxView() {
               </Button>
             </div>
 
-            <div className="flex-1 space-y-2 overflow-y-auto p-4">
+            <div
+              className="flex-1 space-y-1.5 overflow-y-auto p-4"
+              style={{
+                backgroundColor: "#0b141a",
+                backgroundImage:
+                  "radial-gradient(circle at 15% 20%, rgba(255,255,255,0.025) 0, transparent 40%)," +
+                  "radial-gradient(circle at 85% 75%, rgba(255,255,255,0.02) 0, transparent 40%)",
+              }}
+            >
               {threadMessages.map((m) => (
                 <div key={m.id} className={cn("flex", m.fromMe ? "justify-end" : "justify-start")}>
                   <div className={cn(
-                    "max-w-[75%] rounded-2xl px-3 py-2 text-sm",
-                    m.fromMe ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
+                    "max-w-[75%] rounded-lg px-3 py-2 text-sm shadow-sm",
+                    m.fromMe
+                      ? "rounded-tr-sm bg-primary text-primary-foreground"
+                      : "rounded-tl-sm bg-[#202c33] text-foreground"
                   )}>
                     {m.msgType && m.msgType !== "text" && (
                       <div className="mb-1 flex items-center gap-1 text-[10px] opacity-70">
