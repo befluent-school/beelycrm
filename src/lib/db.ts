@@ -575,7 +575,12 @@ export const db = {
 
   // ── SDRs (WhatsApp Business por atendente) ──────────────────
   upsertSdr: async (s: Sdr) => {
-    await supabase.from("sdrs").upsert(fromSdr(s));
+    const { error } = await supabase.from("sdrs").upsert(fromSdr(s));
+    if (error) {
+      // Este era o ponto cego que fazia SDRs "salvos" nunca chegarem ao banco:
+      // o webhook então não os encontrava e descartava mensagens sem rastro.
+      console.error("[db] upsertSdr falhou — SDR NÃO foi persistido no Supabase:", error.message);
+    }
   },
   deleteSdr: async (id: string) => {
     await supabase.from("sdrs").delete().eq("id", id);

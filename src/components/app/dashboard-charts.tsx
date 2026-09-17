@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   Area,
   AreaChart,
@@ -13,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { REVENUE_SERIES } from "@/lib/demo-data";
+import type { Deal } from "@/lib/store";
 
 const BRAND = "#E59313";
 const META_LINE = "#8a7560";
@@ -22,10 +23,36 @@ function brl(v: number) {
   return new Intl.NumberFormat("pt-BR", { notation: "compact", style: "currency", currency: "BRL" }).format(v);
 }
 
-export function RevenueChart() {
+const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+/**
+ * Receita ganha por mês (últimos 6 meses corridos, terminando no mês atual)
+ * vs. meta mensal configurada — antes era um array estático (REVENUE_SERIES em
+ * demo-data.ts) que nunca refletia negócio nenhum, daí o gráfico "nunca mudar".
+ */
+function buildRevenueSeries(deals: Deal[], monthlyGoal: number) {
+  const now = new Date();
+  const months: { key: string; month: string; receita: number; meta: number }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ key: `${d.getFullYear()}-${d.getMonth()}`, month: MONTH_LABELS[d.getMonth()], receita: 0, meta: monthlyGoal });
+  }
+  const byKey = new Map(months.map((m) => [m.key, m]));
+  for (const deal of deals) {
+    if (deal.status !== "won") continue;
+    const d = new Date(deal.createdAt);
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    const entry = byKey.get(key);
+    if (entry) entry.receita += deal.value;
+  }
+  return months;
+}
+
+export function RevenueChart({ deals = [], monthlyGoal = 0 }: { deals?: Deal[]; monthlyGoal?: number }) {
+  const data = useMemo(() => buildRevenueSeries(deals, monthlyGoal), [deals, monthlyGoal]);
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <AreaChart data={REVENUE_SERIES} margin={{ left: -10, right: 10, top: 10 }}>
+      <AreaChart data={data} margin={{ left: -10, right: 10, top: 10 }}>
         <defs>
           <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor={BRAND} stopOpacity={0.35} />

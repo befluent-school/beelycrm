@@ -696,6 +696,8 @@ export function SettingsView({ defaultTab = "geral" }: { defaultTab?: string }) 
         </div>
 
         <SdrConnect sdr={editingSdr} open={sdrConnectOpen} onOpenChange={setSdrConnectOpen} />
+
+        <SupabaseDiagnosticsCard />
       </TabsContent>
 
       {/* ─── Equipe ────────────────────────────────────────────── */}
@@ -1113,6 +1115,102 @@ function StageBenchmarkEditor() {
         <Button variant="ghost" size="sm" className="mt-3" onClick={() => { resetStageBenchmarks(); toast.success("Benchmarks restaurados ao padrão do Playbook."); }}>
           <RefreshCw className="size-3.5" /> Restaurar padrão do Playbook
         </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── Diagnóstico de persistência Supabase + limpeza de conversas órfãs ── */
+interface SupabaseStatus {
+  ok: boolean;
+  reason?: string;
+  execSql: { available: boolean; error?: string };
+  tables: Record<string, { exists: boolean; count?: number; error?: string }>;
+}
+
+function SupabaseDiagnosticsCard() {
+  const [status, setStatus] = useState<SupabaseStatus | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+
+  async function check() {
+    setChecking(true);
+    try {
+      const res = await fetch("/api/debug/supabase-status");
+      setStatus(await res.json());
+    } catch {
+      toast.error("Falha ao consultar o diagnóstico.");
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function cleanupOrphans() {
+    if (!confirm("Remover permanentemente as conversas do Inbox sem SDR vinculado (histórico antigo/desatualizado)? Essa ação não pode ser desfeita.")) return;
+    setCleaning(true);
+    try {
+      const res = await fetch("/api/inbox/cleanup-orphans", { method: "DELETE" });
+      const data = await res.json();
+      if (data.ok) toast.success(`${data.deleted} conversa(s) antiga(s) removida(s).`);
+      else toast.error(data.error ?? "Falha ao limpar conversas antigas.");
+    } catch {
+      toast.error("Falha ao limpar conversas antigas.");
+    } finally {
+      setCleaning(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Diagnóstico de conexão com o banco</CardTitle>
+        <CardDescription>
+          Verifica se o Supabase está gravando de verdade (SDRs, mensagens do WhatsApp, negócios).
+          Se algo falhar aqui, é a causa raiz de integrações que “não chegam” no sistema.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={check} disabled={checking}>
+            {checking ? <RefreshCw className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+            Verificar conexão
+          </Button>
+          <Button variant="destructive" size="sm" onClick={cleanupOrphans} disabled={cleaning}>
+            <Trash2 className="size-3.5" /> Limpar conversas antigas do Inbox
+          </Button>
+        </div>
+
+        {status && (
+          <div className="space-y-2 rounded-lg border border-border bg-white/[0.02] p-3 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Status geral</span>
+              <Badge variant={status.ok ? "success" : "destructive"}>{status.ok ? "OK" : "Com falhas"}</Badge>
+            </div>
+            {status.reason && <p className="text-destructive">{status.reason}</p>}
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Função exec_sql (auto-schema)</span>
+              <span className={status.execSql.available ? "text-green-400" : "text-destructive"}>
+                {status.execSql.available ? "disponível" : status.execSql.error ?? "indisponível"}
+              </span>
+            </div>
+            {Object.entries(status.tables ?? {}).map(([table, info]) => (
+              <div key={table} className="flex items-center justify-between">
+                <span className="text-muted-foreground">Tabela {table}</span>
+                <span className={info.exists ? "text-green-400" : "text-destructive"}>
+                  {info.exists ? `${info.count ?? 0} registro(s)` : info.error ?? "não existe"}
+                </span>
+              </div>
+            ))}
+            {!status.execSql.available && (
+              <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-amber-200">
+                A função <code className="rounded bg-white/10 px-1">exec_sql</code> não existe no seu banco — isso faz o
+                app falhar silenciosamente ao salvar SDRs/tabelas novas. Rode o arquivo{" "}
+                <code className="rounded bg-white/10 px-1">supabase-setup.sql</code> (na raiz do projeto) uma vez no
+                SQL Editor do Supabase.
+              </p>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

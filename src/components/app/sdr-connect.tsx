@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { CopyField } from "@/components/app/copy-field";
 import { useStore, type Sdr, type WaProvider } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { Info, ExternalLink, Trash2 } from "lucide-react";
+import { Info, ExternalLink, Trash2, PlugZap, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 
 const PROVIDER_INFO: Record<WaProvider, { label: string; guide: string[]; link?: string; linkLabel?: string }> = {
   zapi: {
@@ -71,6 +71,9 @@ export function SdrConnect({
   const [metaVerifyToken, setMetaVerifyToken] = useState(sdr?.metaVerifyToken ?? "");
   const [showGuide, setShowGuide] = useState(!sdr);
   const [savedId, setSavedId] = useState<string | null>(sdr?.id ?? null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const appUrl = typeof window !== "undefined" ? window.location.origin : "";
   const info = PROVIDER_INFO[provider];
@@ -79,11 +82,54 @@ export function SdrConnect({
     setName(""); setEmail(""); setPhoneDisplay(""); setActive(true);
     setProvider("zapi"); setZapiInstanceId(""); setZapiToken(""); setZapiClientToken("");
     setMetaPhoneNumberId(""); setMetaAccessToken(""); setMetaWabaId(""); setMetaVerifyToken("");
-    setSavedId(null); setShowGuide(true);
+    setSavedId(null); setShowGuide(true); setTestResult(null);
   }
 
-  function save() {
+  /** Bate direto na API do provedor — evita salvar credencial errada sem aviso. */
+  async function testConnection(): Promise<{ ok: boolean; message: string }> {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/sdrs/test-connection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          waProvider: provider,
+          zapiInstanceId, zapiToken, zapiClientToken,
+          metaPhoneNumberId, metaAccessToken,
+        }),
+      });
+      const data = await res.json();
+      const result = data.ok
+        ? { ok: true, message: data.detail ?? "Conexão confirmada." }
+        : { ok: false, message: data.error ?? "Falha desconhecida." };
+      setTestResult(result);
+      return result;
+    } catch (e) {
+      const result = { ok: false, message: e instanceof Error ? e.message : String(e) };
+      setTestResult(result);
+      return result;
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function save() {
     if (!name.trim()) return toast.error("Informe o nome do SDR.");
+
+    const hasCreds = provider === "meta_cloud"
+      ? !!(metaPhoneNumberId.trim() && metaAccessToken.trim())
+      : !!(zapiInstanceId.trim() && zapiToken.trim());
+
+    if (hasCreds) {
+      setSaving(true);
+      const result = await testConnection();
+      setSaving(false);
+      if (!result.ok && !confirm(`Não foi possível confirmar a conexão com o WhatsApp:\n\n${result.message}\n\nSalvar mesmo assim?`)) {
+        return;
+      }
+    }
+
     const patch: Omit<Sdr, "id" | "createdAt"> = {
       name: name.trim(), email: email.trim() || undefined, phoneDisplay: phoneDisplay.trim() || undefined,
       active, waProvider: provider,
@@ -103,6 +149,23 @@ export function SdrConnect({
       const id = addSdr(patch);
       setSavedId(id);
       toast.success("SDR criado. Copie a URL do webhook abaixo e configure no provedor.");
+    }
+
+    // Confirma que a gravação chegou de verdade ao Supabase (não só ao localStorage) —
+    // é exatamente essa falha silenciosa que fazia o webhook nunca achar o SDR.
+    void confirmPersisted();
+  }
+
+  async function confirmPersisted() {
+    try {
+      const res = await fetch("/api/debug/supabase-status");
+      const data = await res.json();
+      const sdrsTable = data?.tables?.sdrs;
+      if (sdrsTable && sdrsTable.exists === false) {
+        toast.error("O SDR foi salvo só no seu navegador — a tabela \"sdrs\" não existe no Supabase. Rode supabase-setup.sql no SQL Editor.", { duration: 8000 });
+      }
+    } catch {
+      /* diagnóstico best-effort, não bloqueia o fluxo */
     }
   }
 
@@ -208,6 +271,21 @@ export function SdrConnect({
                 <F label="Verify Token" value={metaVerifyToken} onChange={setMetaVerifyToken} placeholder="beely-verify-123" />
               </div>
             )}
+
+            <Button type="button" variant="outline" size="sm" className="w-full gap-1.5" onClick={testConnection} disabled={testing}>
+              {testing ? <Loader2 className="size-3.5 animate-spin" /> : <PlugZap className="size-3.5" />}
+              Testar conexão agora
+            </Button>
+
+            {testResult && (
+              <div className={cn(
+                "flex items-start gap-2 rounded-lg border p-2.5 text-xs",
+                testResult.ok ? "border-green-500/30 bg-green-500/10 text-green-300" : "border-destructive/40 bg-destructive/10 text-destructive"
+              )}>
+                {testResult.ok ? <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" /> : <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />}
+                <span>{testResult.message}</span>
+              </div>
+            )}
           </div>
 
           {webhookUrl && (
@@ -226,7 +304,8 @@ export function SdrConnect({
                 <Trash2 className="size-3.5" /> Remover
               </Button>
             )}
-            <Button className="flex-1" onClick={save}>
+            <Button className="flex-1" onClick={save} disabled={saving}>
+              {saving && <Loader2 className="size-3.5 animate-spin" />}
               {savedId ? "Salvar alterações" : "Criar SDR"}
             </Button>
           </div>

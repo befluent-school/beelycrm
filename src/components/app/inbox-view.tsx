@@ -100,11 +100,16 @@ export function InboxView() {
     return () => clearInterval(id);
   }, []);
 
-  /* ── Agrega mensagens em threads (client-side, mesma lógica de getThreads) ── */
+  /* ── Agrega mensagens em threads (client-side, mesma lógica de getThreads) ──
+   * Só conversas com sdrId (associadas a um SDR real) entram no Inbox — isso
+   * esconde automaticamente qualquer conversa órfã/antiga anterior ao Inbox
+   * multi-SDR, mesmo antes de rodar a limpeza definitiva no banco. */
+  const scopedMessages = useMemo(() => messages.filter((m) => !!m.sdrId), [messages]);
+
   const threads = useMemo<Thread[]>(() => {
     const byThread = new Map<string, Thread>();
-    for (const m of messages) {
-      const key = m.threadKey ?? (m.sdrId ? `${m.sdrId}:${m.from}` : m.from);
+    for (const m of scopedMessages) {
+      const key = m.threadKey ?? `${m.sdrId}:${m.from}`;
       const existing = byThread.get(key);
       if (!existing || m.timestamp >= existing.lastTimestamp) {
         byThread.set(key, {
@@ -116,21 +121,21 @@ export function InboxView() {
       }
     }
     const lastOut = new Map<string, number>();
-    for (const m of messages) {
+    for (const m of scopedMessages) {
       if (!m.fromMe) continue;
-      const key = m.threadKey ?? (m.sdrId ? `${m.sdrId}:${m.from}` : m.from);
+      const key = m.threadKey ?? `${m.sdrId}:${m.from}`;
       lastOut.set(key, Math.max(lastOut.get(key) ?? 0, m.timestamp));
     }
-    for (const m of messages) {
+    for (const m of scopedMessages) {
       if (m.fromMe) continue;
-      const key = m.threadKey ?? (m.sdrId ? `${m.sdrId}:${m.from}` : m.from);
+      const key = m.threadKey ?? `${m.sdrId}:${m.from}`;
       if (m.timestamp > (lastOut.get(key) ?? 0)) {
         const t = byThread.get(key);
         if (t) t.unread += 1;
       }
     }
     return [...byThread.values()].sort((a, b) => b.lastTimestamp - a.lastTimestamp);
-  }, [messages]);
+  }, [scopedMessages]);
 
   const sdrCounts = useMemo(() => {
     const map = new Map<string, number>();
@@ -153,8 +158,8 @@ export function InboxView() {
 
   const currentThread = threads.find((t) => t.threadKey === activeThread) ?? null;
   const threadMessages = useMemo(
-    () => messages.filter((m) => (m.threadKey ?? (m.sdrId ? `${m.sdrId}:${m.from}` : m.from)) === activeThread),
-    [messages, activeThread]
+    () => scopedMessages.filter((m) => (m.threadKey ?? `${m.sdrId}:${m.from}`) === activeThread),
+    [scopedMessages, activeThread]
   );
 
   const linkedContact = currentThread

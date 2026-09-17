@@ -109,16 +109,6 @@ export interface DemoConversation {
 
 export const CONVERSATIONS: DemoConversation[] = [];
 
-/* Dashboard series — zerado para a conta real começar do zero */
-export const REVENUE_SERIES: { month: string; receita: number; meta: number }[] = [
-  { month: "Jan", receita: 0, meta: 0 },
-  { month: "Fev", receita: 0, meta: 0 },
-  { month: "Mar", receita: 0, meta: 0 },
-  { month: "Abr", receita: 0, meta: 0 },
-  { month: "Mai", receita: 0, meta: 0 },
-  { month: "Jun", receita: 0, meta: 0 },
-];
-
 export const FUNNEL_SERIES = STAGES.map((s) => ({
   stage: s.name,
   count: 0,

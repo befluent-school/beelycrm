@@ -83,6 +83,20 @@ export async function POST(request: Request, ctx: Ctx) {
   const sdr = await fetchSdr(sdrId);
   if (!sdr) {
     console.warn(`[webhook:${provider}/${sdrId}] SDR não encontrado — evento descartado`);
+    // Loga mesmo assim (visível em /debug) — sem isso, uma mensagem de teste que
+    // chega aqui e é rejeitada por SDR ausente desaparecia sem nenhum rastro,
+    // parecendo que a Z-API nunca chamou o webhook.
+    try {
+      let payload: unknown;
+      try { payload = JSON.parse(rawBody); } catch { payload = { raw: rawBody.slice(0, 500) }; }
+      await logWebhookPayload({
+        provider, sdrId, error: "sdr_not_found",
+        hint: "O SDR informado na URL do webhook não existe no Supabase (ou a tabela sdrs não foi criada — veja /api/debug/supabase-status).",
+        ...(typeof payload === "object" && payload ? payload : {}),
+      });
+    } catch (e) {
+      console.error(`[webhook:${provider}/${sdrId}] falha ao logar evento sdr_not_found:`, e);
+    }
     return NextResponse.json({ error: "sdr_not_found" }, { status: 404 });
   }
 
