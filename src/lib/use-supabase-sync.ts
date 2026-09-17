@@ -23,6 +23,21 @@ function ensureComercialBfPipeline(pipelines: DbSnapshot["pipelines"]): DbSnapsh
 }
 
 /**
+ * Une uma lista local com a versão vinda do Supabase por id, SEM nunca
+ * descartar um registro que só existe localmente — essencial para o
+ * refresh periódico não apagar dados recém-criados (ex.: leads importados
+ * em lote) cujo upsert no Supabase ainda está em voo quando o refresh
+ * dispara. O snapshot remoto vence quando o id já existe dos dois lados
+ * (ele é o source of truth para edições), mas nunca remove um item
+ * local-only — só uma exclusão explícita (delete*) tira algo da lista.
+ */
+function mergeById<T extends { id: string }>(local: T[], remote: T[]): T[] {
+  const remoteIds = new Set(remote.map((r) => r.id));
+  const localOnly = local.filter((l) => !remoteIds.has(l.id));
+  return [...remote, ...localOnly];
+}
+
+/**
  * Hidrata o store Zustand com dados do Supabase na inicialização, e mantém
  * refrescando periodicamente — sem isso, uma aba aberta (ou navegação só
  * client-side dentro da SPA, sem reload) ficava com o dashboard/CRM inteiro
@@ -52,23 +67,31 @@ export function useSupabaseSync() {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     if (!supabaseUrl) return () => clearInterval(keepAlive);
 
-    /** Refresco leve: só relê o Supabase e atualiza o store — sem lógica de migração. */
+    /**
+     * Refresco leve: só relê o Supabase e atualiza o store — sem lógica de
+     * migração. Faz merge por id em vez de sobrescrever as listas: uma
+     * importação em lote (centenas de upserts em voo) pode não ter
+     * terminado de persistir quando este refresh dispara, e um overwrite
+     * puro apagaria da tela os registros que ainda não chegaram ao banco
+     * (o bug de "leads somem depois de importar").
+     */
     const refresh = async () => {
       try {
         const fresh = await loadAll();
         if (fresh) {
+          const cur = useStore.getState();
           useStore.setState({
             pipelines:         ensureComercialBfPipeline(fresh.pipelines),
-            deals:             fresh.deals,
-            contacts:          fresh.contacts,
-            activities:        fresh.activities,
-            companies:         fresh.companies,
-            automations:       fresh.automations,
-            scoringRules:      fresh.scoringRules,
+            deals:             mergeById(cur.deals, fresh.deals),
+            contacts:          mergeById(cur.contacts, fresh.contacts),
+            activities:        mergeById(cur.activities, fresh.activities),
+            companies:         mergeById(cur.companies, fresh.companies),
+            automations:       mergeById(cur.automations, fresh.automations),
+            scoringRules:      mergeById(cur.scoringRules, fresh.scoringRules),
             connectedChannels: fresh.connectedChannels,
             integrations:      fresh.integrations,
             financialConfig:   fresh.financialConfig,
-            sdrs:              fresh.sdrs,
+            sdrs:              mergeById(cur.sdrs, fresh.sdrs),
           });
         }
       } catch (e) {

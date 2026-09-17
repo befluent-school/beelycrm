@@ -476,90 +476,120 @@ export async function seedSupabase(snapshot: DbSnapshot): Promise<void> {
 
 /* ── Mutações individuais ─────────────────────────────────── */
 
+/**
+ * Loga qualquer erro do Supabase em vez de engolir silenciosamente — sem
+ * isso, uma escrita bloqueada (RLS sem policy, coluna faltando, etc.)
+ * nunca aparecia em lugar nenhum: o dado "sumia" (voltava a não existir no
+ * banco) sem nenhum rastro no console. Foi assim que o bug do SDR não
+ * persistir passou despercebido; aplicado aqui para toda mutação do CRM.
+ */
+function logErr(table: string, op: "upsert" | "delete", error: { message: string } | null) {
+  if (error) console.error(`[db] ${op} em "${table}" falhou:`, error.message);
+}
+
 // Pipelines
 export const db = {
   // ── Pipelines ──────────────────────────────────────────────
   upsertPipeline: async (p: Pipeline) => {
-    await supabase.from("pipelines").upsert({ id: p.id, name: p.name, stages: p.stages });
+    const { error } = await supabase.from("pipelines").upsert({ id: p.id, name: p.name, stages: p.stages });
+    logErr("pipelines", "upsert", error);
   },
   deletePipeline: async (id: string) => {
-    await supabase.from("pipelines").delete().eq("id", id);
+    const { error } = await supabase.from("pipelines").delete().eq("id", id);
+    logErr("pipelines", "delete", error);
   },
 
   // ── Deals ──────────────────────────────────────────────────
   upsertDeal: async (d: Deal) => {
-    await supabase.from("deals").upsert(fromDeal(d));
+    const { error } = await supabase.from("deals").upsert(fromDeal(d));
+    logErr("deals", "upsert", error);
   },
   deleteDeal: async (id: string) => {
-    await supabase.from("deals").delete().eq("id", id);
+    const { error } = await supabase.from("deals").delete().eq("id", id);
+    logErr("deals", "delete", error);
   },
 
   // ── Contacts ───────────────────────────────────────────────
   upsertContact: async (c: Contact) => {
-    await supabase.from("contacts").upsert(fromContact(c));
+    const { error } = await supabase.from("contacts").upsert(fromContact(c));
+    logErr("contacts", "upsert", error);
   },
   upsertContacts: async (cs: Contact[]) => {
     if (cs.length === 0) return;
     // Lote de 200 para evitar timeout
     for (let i = 0; i < cs.length; i += 200) {
-      await supabase.from("contacts").upsert(cs.slice(i, i + 200).map(fromContact));
+      const { error } = await supabase.from("contacts").upsert(cs.slice(i, i + 200).map(fromContact));
+      logErr("contacts", "upsert", error);
     }
   },
   deleteContact: async (id: string) => {
-    await supabase.from("contacts").delete().eq("id", id);
+    const { error } = await supabase.from("contacts").delete().eq("id", id);
+    logErr("contacts", "delete", error);
   },
 
   // ── Activities ─────────────────────────────────────────────
   upsertActivity: async (a: Activity) => {
-    await supabase.from("activities").upsert(fromActivity(a));
+    const { error } = await supabase.from("activities").upsert(fromActivity(a));
+    logErr("activities", "upsert", error);
   },
   deleteActivity: async (id: string) => {
-    await supabase.from("activities").delete().eq("id", id);
+    const { error } = await supabase.from("activities").delete().eq("id", id);
+    logErr("activities", "delete", error);
   },
 
   // ── Companies ──────────────────────────────────────────────
   upsertCompany: async (c: Company) => {
-    await supabase.from("companies").upsert({ id: c.id, name: c.name, domain: c.domain ?? null, phone: c.phone ?? null, segment: c.segment ?? null, notes: c.notes ?? null, owner: c.owner });
+    const { error } = await supabase.from("companies").upsert({ id: c.id, name: c.name, domain: c.domain ?? null, phone: c.phone ?? null, segment: c.segment ?? null, notes: c.notes ?? null, owner: c.owner });
+    logErr("companies", "upsert", error);
   },
   deleteCompany: async (id: string) => {
-    await supabase.from("companies").delete().eq("id", id);
+    const { error } = await supabase.from("companies").delete().eq("id", id);
+    logErr("companies", "delete", error);
   },
 
   // ── Automations ────────────────────────────────────────────
   upsertAutomation: async (a: Automation) => {
-    await supabase.from("automations").upsert({ id: a.id, name: a.name, trigger: a.trigger, action: a.action, active: a.active });
+    const { error } = await supabase.from("automations").upsert({ id: a.id, name: a.name, trigger: a.trigger, action: a.action, active: a.active });
+    logErr("automations", "upsert", error);
   },
   deleteAutomation: async (id: string) => {
-    await supabase.from("automations").delete().eq("id", id);
+    const { error } = await supabase.from("automations").delete().eq("id", id);
+    logErr("automations", "delete", error);
   },
 
   // ── Scoring Rules ──────────────────────────────────────────
   upsertScoringRule: async (r: ScoringRule) => {
-    await supabase.from("scoring_rules").upsert({ id: r.id, label: r.label, points: r.points });
+    const { error } = await supabase.from("scoring_rules").upsert({ id: r.id, label: r.label, points: r.points });
+    logErr("scoring_rules", "upsert", error);
   },
   deleteScoringRule: async (id: string) => {
-    await supabase.from("scoring_rules").delete().eq("id", id);
+    const { error } = await supabase.from("scoring_rules").delete().eq("id", id);
+    logErr("scoring_rules", "delete", error);
   },
 
   // ── Connected Channels ─────────────────────────────────────
   upsertChannel: async (ch: ConnectedChannel) => {
-    await supabase.from("connected_channels").upsert({ type: ch.type, provider: ch.provider, credentials: ch.credentials, connected_at: ch.connectedAt });
+    const { error } = await supabase.from("connected_channels").upsert({ type: ch.type, provider: ch.provider, credentials: ch.credentials, connected_at: ch.connectedAt });
+    logErr("connected_channels", "upsert", error);
   },
   deleteChannel: async (type: string) => {
-    await supabase.from("connected_channels").delete().eq("type", type);
+    const { error } = await supabase.from("connected_channels").delete().eq("type", type);
+    logErr("connected_channels", "delete", error);
   },
 
   // ── Integrations ───────────────────────────────────────────
   upsertIntegration: async (id: string, data: SavedIntegration) => {
-    await supabase.from("integrations").upsert({ id, credentials: data.credentials, connected_at: data.connectedAt });
+    const { error } = await supabase.from("integrations").upsert({ id, credentials: data.credentials, connected_at: data.connectedAt });
+    logErr("integrations", "upsert", error);
   },
   deleteIntegration: async (id: string) => {
-    await supabase.from("integrations").delete().eq("id", id);
+    const { error } = await supabase.from("integrations").delete().eq("id", id);
+    logErr("integrations", "delete", error);
   },
 
   // ── Financial Config ───────────────────────────────────────
   upsertFinancialConfig: async (fc: FinancialConfig) => {
-    await supabase.from("financial_config").upsert({
+    const { error } = await supabase.from("financial_config").upsert({
       id:                      "default",
       monthly_marketing_spend: fc.monthlyMarketingSpend,
       avg_contract_months:     fc.avgContractMonths,
@@ -571,6 +601,7 @@ export const db = {
       daily_targets:           fc.dailyTargets,
       updated_at:              new Date().toISOString(),
     });
+    logErr("financial_config", "upsert", error);
   },
 
   // ── SDRs (WhatsApp Business por atendente) ──────────────────
