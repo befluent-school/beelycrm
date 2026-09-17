@@ -10,9 +10,10 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Plus, Zap, ArrowRight, Webhook, Trash2, Pencil, X, TrendingUp, TrendingDown, Star, Clock, MessageCircle, Mail, MousePointer, UserCheck, Save, Loader2, Repeat, CalendarClock } from "lucide-react";
+import { Plus, Zap, ArrowRight, Webhook, Trash2, Pencil, X, TrendingUp, TrendingDown, Star, Clock, MessageCircle, Mail, MousePointer, UserCheck, Save, Loader2, Repeat, CalendarClock, BookOpen, Phone, Copy, ShieldQuestion, Handshake, Flame as FlameIcon, Megaphone } from "lucide-react";
 import { useStore, useHydrated } from "@/lib/store";
 import { SITUATION_LABELS, type FollowupSituation } from "@/lib/followup-playbook-labels";
+import { SCRIPT_CATEGORY_LABELS, type Script, type ScriptCategory } from "@/lib/scripts-store";
 import { cn } from "@/lib/utils";
 
 const TRIGGERS = [
@@ -380,7 +381,7 @@ export function AutomationsView() {
       <TabsList>
         <TabsTrigger value="automations">Automações</TabsTrigger>
         <TabsTrigger value="followups">Follow-up</TabsTrigger>
-        <TabsTrigger value="playbook-followups">Follow-ups (Playbook)</TabsTrigger>
+        <TabsTrigger value="playbook-followups">Playbook</TabsTrigger>
         <TabsTrigger value="scoring">Lead Scoring</TabsTrigger>
         <TabsTrigger value="forms">Formulários</TabsTrigger>
       </TabsList>
@@ -434,9 +435,9 @@ export function AutomationsView() {
         <FollowupEditor />
       </TabsContent>
 
-      {/* ── Follow-ups por situação (Playbook Comercial Be Fluent v3) ── */}
+      {/* ── Playbook: follow-up por situação + biblioteca de scripts ── */}
       <TabsContent value="playbook-followups">
-        <PlaybookFollowupEditor />
+        <PlaybookLibrary />
       </TabsContent>
 
       {/* ── Lead Scoring ───────────────────────────────────── */}
@@ -973,6 +974,305 @@ function PlaybookFollowupEditor() {
             </CardContent>
           </Card>
         ))}
+    </div>
+  );
+}
+
+/* ── Biblioteca de Playbook — follow-up + scripts livres por categoria ── */
+
+const SCRIPT_CATEGORY_ICONS: Record<ScriptCategory, React.ComponentType<{ className?: string }>> = {
+  followup:    Repeat,
+  remarketing: Megaphone,
+  reativacao:  FlameIcon,
+  objecao:     ShieldQuestion,
+  fechamento:  Handshake,
+  vendas:      BookOpen,
+};
+
+const CHANNEL_LABELS: Record<Script["channel"], string> = {
+  whatsapp: "WhatsApp",
+  email:    "E-mail",
+  call:     "Ligação",
+};
+
+const CHANNEL_ICONS: Record<Script["channel"], React.ComponentType<{ className?: string }>> = {
+  whatsapp: MessageCircle,
+  email:    Mail,
+  call:     Phone,
+};
+
+function ScriptDialog({
+  script,
+  defaultCategory,
+  open,
+  onOpenChange,
+  onSave,
+}: {
+  script: Script | null;
+  defaultCategory: ScriptCategory;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onSave: (data: { category: ScriptCategory; title: string; channel: Script["channel"]; body: string }) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{script ? "Editar script" : "Novo script"}</DialogTitle>
+          <DialogDescription>Fica salvo na biblioteca do Playbook para toda a equipe consultar e usar.</DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            onSave({
+              category: (String(f.get("category")) || defaultCategory) as ScriptCategory,
+              title: String(f.get("title") || "").trim(),
+              channel: String(f.get("channel")) as Script["channel"],
+              body: String(f.get("body") || ""),
+            });
+            onOpenChange(false);
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label>Título</Label>
+            <Input name="title" required defaultValue={script?.title ?? ""} placeholder="Ex: Objeção de preço — reformula valor" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Categoria</Label>
+              <select
+                name="category"
+                defaultValue={script?.category ?? defaultCategory}
+                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none"
+              >
+                {(Object.keys(SCRIPT_CATEGORY_LABELS) as ScriptCategory[]).map((c) => (
+                  <option key={c} value={c}>{SCRIPT_CATEGORY_LABELS[c]}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Canal</Label>
+              <select
+                name="channel"
+                defaultValue={script?.channel ?? "whatsapp"}
+                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm outline-none"
+              >
+                <option value="whatsapp">WhatsApp</option>
+                <option value="email">E-mail</option>
+                <option value="call">Ligação</option>
+              </select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>
+              Script — use <code className="rounded bg-white/10 px-1">{"{{primeiroNome}}"}</code>,{" "}
+              <code className="rounded bg-white/10 px-1">{"{{dia}}"}</code>,{" "}
+              <code className="rounded bg-white/10 px-1">{"{{mes}}"}</code> para personalizar
+            </Label>
+            <textarea
+              name="body"
+              required
+              defaultValue={script?.body ?? ""}
+              rows={5}
+              className="w-full rounded-lg border border-input bg-background/50 p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40 resize-none"
+            />
+          </div>
+          <Button type="submit" className="w-full">{script ? "Salvar alterações" : "Criar script"}</Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PlaybookLibrary() {
+  const [scripts, setScripts] = useState<Script[] | null>(null);
+  const [category, setCategory] = useState<ScriptCategory | "all">("all");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingScript, setEditingScript] = useState<Script | null>(null);
+
+  function loadScripts() {
+    fetch("/api/scripts")
+      .then((r) => r.json())
+      .then((data) => setScripts(data))
+      .catch(() => setScripts([]));
+  }
+
+  useEffect(loadScripts, []);
+
+  async function handleSave(data: { category: ScriptCategory; title: string; channel: Script["channel"]; body: string }) {
+    try {
+      const res = await fetch("/api/scripts", {
+        method: editingScript ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingScript ? { id: editingScript.id, ...data } : data),
+      });
+      if (res.ok) {
+        toast.success(editingScript ? "Script atualizado!" : "Script criado!");
+        loadScripts();
+      } else {
+        toast.error("Erro ao salvar script.");
+      }
+    } catch {
+      toast.error("Falha de conexão ao salvar script.");
+    } finally {
+      setEditingScript(null);
+    }
+  }
+
+  async function handleDelete(id: string, title: string) {
+    if (!confirm(`Excluir o script "${title}"?`)) return;
+    try {
+      const res = await fetch(`/api/scripts?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("Script excluído.");
+        setScripts((prev) => prev?.filter((s) => s.id !== id) ?? prev);
+      } else {
+        toast.error("Erro ao excluir script.");
+      }
+    } catch {
+      toast.error("Falha de conexão ao excluir script.");
+    }
+  }
+
+  function copyToClipboard(body: string) {
+    navigator.clipboard.writeText(body).then(
+      () => toast.success("Script copiado — cole na conversa."),
+      () => toast.error("Não foi possível copiar.")
+    );
+  }
+
+  const filtered = category === "all" ? scripts ?? [] : (scripts ?? []).filter((s) => s.category === category);
+  const grouped = new Map<ScriptCategory, Script[]>();
+  for (const s of filtered) {
+    grouped.set(s.category, [...(grouped.get(s.category) ?? []), s]);
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Follow-up por situação (7 modelos oficiais, gatilho automático) */}
+      <div>
+        <div className="mb-3 flex items-center gap-2">
+          <Repeat className="size-4 text-primary" />
+          <h3 className="font-display text-sm font-bold uppercase tracking-wide">Follow-up por situação</h3>
+          <Badge variant="outline" className="text-[10px]">disparo automático</Badge>
+        </div>
+        <PlaybookFollowupEditor />
+      </div>
+
+      {/* Biblioteca livre de scripts — reativação, objeção, fechamento, vendas, remarketing */}
+      <div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <BookOpen className="size-4 text-primary" />
+            <h3 className="font-display text-sm font-bold uppercase tracking-wide">Biblioteca de scripts</h3>
+            <Badge variant="outline" className="text-[10px]">consulta manual</Badge>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => { setEditingScript(null); setDialogOpen(true); }}
+          >
+            <Plus className="size-4" /> Novo script
+          </Button>
+        </div>
+
+        <div className="mb-4 flex flex-wrap gap-1.5">
+          <button
+            onClick={() => setCategory("all")}
+            className={cn(
+              "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+              category === "all" ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground hover:bg-white/[0.05]"
+            )}
+          >
+            Todas
+          </button>
+          {(Object.keys(SCRIPT_CATEGORY_LABELS) as ScriptCategory[])
+            .filter((c) => c !== "followup")
+            .map((c) => (
+              <button
+                key={c}
+                onClick={() => setCategory(c)}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                  category === c ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground hover:bg-white/[0.05]"
+                )}
+              >
+                {SCRIPT_CATEGORY_LABELS[c]}
+              </button>
+            ))}
+        </div>
+
+        {scripts === null ? (
+          <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+        ) : filtered.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">Nenhum script nessa categoria ainda.</p>
+        ) : (
+          <div className="space-y-5">
+            {[...grouped.entries()].map(([cat, list]) => {
+              const CatIcon = SCRIPT_CATEGORY_ICONS[cat];
+              return (
+                <div key={cat}>
+                  {category === "all" && (
+                    <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      <CatIcon className="size-3.5" /> {SCRIPT_CATEGORY_LABELS[cat]}
+                    </div>
+                  )}
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {list.map((s) => {
+                      const ChIcon = CHANNEL_ICONS[s.channel];
+                      return (
+                        <Card key={s.id} className={cn(!s.active && "opacity-60")}>
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <ChIcon className="size-3.5" /> {CHANNEL_LABELS[s.channel]}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost" size="icon" className="size-7 text-muted-foreground hover:text-primary"
+                                  onClick={() => copyToClipboard(s.body)}
+                                  title="Copiar script"
+                                >
+                                  <Copy className="size-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost" size="icon" className="size-7 text-muted-foreground hover:text-primary"
+                                  onClick={() => { setEditingScript(s); setDialogOpen(true); }}
+                                  title="Editar"
+                                >
+                                  <Pencil className="size-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost" size="icon" className="size-7 text-muted-foreground hover:text-destructive"
+                                  onClick={() => handleDelete(s.id, s.title)}
+                                  title="Excluir"
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                            <p className="mt-2 text-sm font-semibold">{s.title}</p>
+                            <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground line-clamp-4">{s.body}</p>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <ScriptDialog
+        script={editingScript}
+        defaultCategory={category === "all" ? "vendas" : category}
+        open={dialogOpen}
+        onOpenChange={(o) => { setDialogOpen(o); if (!o) setEditingScript(null); }}
+        onSave={handleSave}
+      />
     </div>
   );
 }

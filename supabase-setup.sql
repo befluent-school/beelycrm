@@ -114,6 +114,9 @@ begin
   if to_regclass('public.stage_benchmarks') is not null then
     execute 'alter table stage_benchmarks disable row level security';
   end if;
+  if to_regclass('public.scripts') is not null then
+    execute 'alter table scripts disable row level security';
+  end if;
 end $$;
 
 -- ============================================================
