@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getTemplates, logFollowupSent, renderTemplate } from "@/lib/followup-store";
 import { pushMessage } from "@/lib/message-store";
 import { getEmailProvider } from "@/lib/email";
+import { cronGateOrResponse } from "@/lib/cron-gate";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -22,12 +23,8 @@ export const maxDuration = 60;
  *   se a env var estiver definida — o botão manual não precisa dela.
  */
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const secret = searchParams.get("secret") ?? request.headers.get("x-cron-secret");
-  const expected = process.env.CRON_SECRET;
-  if (expected && secret !== expected) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const gated = cronGateOrResponse(request);
+  if (gated) return gated;
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;

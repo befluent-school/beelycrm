@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -62,18 +62,42 @@ export function SdrConnect({
   const [phoneDisplay, setPhoneDisplay] = useState(sdr?.phoneDisplay ?? "");
   const [active, setActive] = useState(sdr?.active ?? true);
   const [provider, setProvider] = useState<WaProvider>(sdr?.waProvider ?? "zapi");
+  // Campos de credencial: o valor real nunca chega ao navegador (ver
+  // src/lib/db.ts toSdr()) — ao editar um SDR existente, começam em branco.
+  // Deixar em branco ao salvar PRESERVA a credencial já salva no servidor;
+  // só escrever aqui define um valor novo. O placeholder abaixo (F component)
+  // indica quando já existe uma credencial salva via sdr?.hasZapiToken etc.
   const [zapiInstanceId, setZapiInstanceId] = useState(sdr?.zapiInstanceId ?? "");
-  const [zapiToken, setZapiToken] = useState(sdr?.zapiToken ?? "");
-  const [zapiClientToken, setZapiClientToken] = useState(sdr?.zapiClientToken ?? "");
+  const [zapiToken, setZapiToken] = useState("");
+  const [zapiClientToken, setZapiClientToken] = useState("");
   const [metaPhoneNumberId, setMetaPhoneNumberId] = useState(sdr?.metaPhoneNumberId ?? "");
-  const [metaAccessToken, setMetaAccessToken] = useState(sdr?.metaAccessToken ?? "");
+  const [metaAccessToken, setMetaAccessToken] = useState("");
   const [metaWabaId, setMetaWabaId] = useState(sdr?.metaWabaId ?? "");
-  const [metaVerifyToken, setMetaVerifyToken] = useState(sdr?.metaVerifyToken ?? "");
+  const [metaVerifyToken, setMetaVerifyToken] = useState("");
   const [showGuide, setShowGuide] = useState(!sdr);
   const [savedId, setSavedId] = useState<string | null>(sdr?.id ?? null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [webhookSecret, setWebhookSecret] = useState<string | undefined>(undefined);
+
+  // addSdr grava webhookSecret no store transitoriamente assim que
+  // /api/sdrs responde à criação (ver store.ts) — captura aqui pro estado
+  // local do diálogo e remove do store na sequência, pra não deixar esse
+  // segredo (gerado pelo Beely, mas ainda assim sensível — é o que autentica
+  // o webhook) persistido indefinidamente no localStorage. Só precisa
+  // existir o tempo de o usuário copiar a URL uma vez.
+  const sdrs = useStore((s) => s.sdrs);
+  useEffect(() => {
+    if (!savedId) return;
+    const current = sdrs.find((x) => x.id === savedId);
+    if (current?.webhookSecret) {
+      setWebhookSecret(current.webhookSecret);
+      useStore.setState((s) => ({
+        sdrs: s.sdrs.map((x) => (x.id === savedId ? { ...x, webhookSecret: undefined } : x)),
+      }));
+    }
+  }, [savedId, sdrs]);
 
   const appUrl = typeof window !== "undefined" ? window.location.origin : "";
   const info = PROVIDER_INFO[provider];
@@ -130,7 +154,12 @@ export function SdrConnect({
       }
     }
 
-    const patch: Omit<Sdr, "id" | "createdAt"> = {
+    // zapiToken/zapiClientToken/metaAccessToken/metaVerifyToken: undefined
+    // quando o campo ficou em branco (edição sem trocar a credencial) —
+    // addSdr/updateSdr tratam "undefined" como "preservar o valor salvo no
+    // servidor", nunca como "apagar". Só um valor preenchido substitui o
+    // que já está salvo.
+    const patch: Omit<Sdr, "id" | "createdAt" | "hasZapiToken" | "hasZapiClientToken" | "hasMetaAccessToken" | "hasMetaVerifyToken"> = {
       name: name.trim(), email: email.trim() || undefined, phoneDisplay: phoneDisplay.trim() || undefined,
       active, waProvider: provider,
       zapiInstanceId: zapiInstanceId.trim() || undefined,
@@ -142,6 +171,10 @@ export function SdrConnect({
       metaVerifyToken: metaVerifyToken.trim() || undefined,
     };
 
+    // addSdr/updateSdr gravam via /api/sdrs (service role), não mais client
+    // -> Supabase direto — a falha de RLS que isso diagnosticava não existe
+    // mais nesse caminho; erro real de gravação já aparece no console via
+    // db.ts/store.ts (console.error) se a chamada a /api/sdrs falhar.
     if (savedId) {
       updateSdr(savedId, patch);
       toast.success("SDR atualizado.");
@@ -149,27 +182,6 @@ export function SdrConnect({
       const id = addSdr(patch);
       setSavedId(id);
       toast.success("SDR criado. Copie a URL do webhook abaixo e configure no provedor.");
-    }
-
-    // Confirma que a gravação chegou de verdade ao Supabase (não só ao localStorage) —
-    // é exatamente essa falha silenciosa que fazia o webhook nunca achar o SDR.
-    void confirmPersisted();
-  }
-
-  async function confirmPersisted() {
-    try {
-      const res = await fetch("/api/debug/supabase-status");
-      const data = await res.json();
-      const sdrsTable = data?.tables?.sdrs;
-      if (sdrsTable && sdrsTable.exists === false) {
-        toast.error("O SDR foi salvo só no seu navegador — a tabela \"sdrs\" não existe no Supabase. Rode supabase-setup.sql no SQL Editor.", { duration: 8000 });
-        return;
-      }
-      if (data?.anonWrite && data.anonWrite.ok === false) {
-        toast.error("O SDR foi salvo só no seu navegador — o Supabase está bloqueando a gravação (RLS sem policy na tabela \"sdrs\"). Rode a seção 7 do supabase-setup.sql atualizado no SQL Editor.", { duration: 10000 });
-      }
-    } catch {
-      /* diagnóstico best-effort, não bloqueia o fluxo */
     }
   }
 
@@ -182,7 +194,13 @@ export function SdrConnect({
     reset();
   }
 
-  const webhookUrl = savedId ? `${appUrl}/api/webhooks/whatsapp/${savedId}` : null;
+  // Com o secret: só disponível uma vez, logo após criar (webhookSecret em
+  // estado local). SDRs antigos (sem webhookSecret salvo) ou reaberturas
+  // posteriores mostram a URL sem ?secret= — o backend aceita (webhook
+  // legado sem secret configurado não é bloqueado, ver verifyWebhookSecret).
+  const webhookUrl = savedId
+    ? `${appUrl}/api/webhooks/whatsapp/${savedId}${webhookSecret ? `?secret=${webhookSecret}` : ""}`
+    : null;
 
   return (
     <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) reset(); }}>
@@ -264,15 +282,27 @@ export function SdrConnect({
             {provider === "zapi" ? (
               <div className="space-y-2.5">
                 <F label="Instance ID" value={zapiInstanceId} onChange={setZapiInstanceId} placeholder="3D8..." />
-                <F label="Token" value={zapiToken} onChange={setZapiToken} placeholder="A1B2C3..." />
-                <F label="Client-Token (opcional)" value={zapiClientToken} onChange={setZapiClientToken} placeholder="F...." />
+                <F
+                  label="Token" value={zapiToken} onChange={setZapiToken}
+                  placeholder={sdr?.hasZapiToken ? "•••••••• (salvo — deixe em branco para manter)" : "A1B2C3..."}
+                />
+                <F
+                  label="Client-Token (opcional)" value={zapiClientToken} onChange={setZapiClientToken}
+                  placeholder={sdr?.hasZapiClientToken ? "•••••••• (salvo — deixe em branco para manter)" : "F...."}
+                />
               </div>
             ) : (
               <div className="space-y-2.5">
                 <F label="Phone Number ID" value={metaPhoneNumberId} onChange={setMetaPhoneNumberId} placeholder="1029384756123" />
-                <F label="Access Token" value={metaAccessToken} onChange={setMetaAccessToken} placeholder="EAAB..." />
+                <F
+                  label="Access Token" value={metaAccessToken} onChange={setMetaAccessToken}
+                  placeholder={sdr?.hasMetaAccessToken ? "•••••••• (salvo — deixe em branco para manter)" : "EAAB..."}
+                />
                 <F label="WhatsApp Business Account ID" value={metaWabaId} onChange={setMetaWabaId} placeholder="1234567890" />
-                <F label="Verify Token" value={metaVerifyToken} onChange={setMetaVerifyToken} placeholder="beely-verify-123" />
+                <F
+                  label="Verify Token" value={metaVerifyToken} onChange={setMetaVerifyToken}
+                  placeholder={sdr?.hasMetaVerifyToken ? "•••••••• (salvo — deixe em branco para manter)" : "beely-verify-123"}
+                />
               </div>
             )}
 
@@ -296,9 +326,15 @@ export function SdrConnect({
             <div className="space-y-1.5 border-t border-border/60 pt-4">
               <Label>URL do Webhook (cole no painel do provedor)</Label>
               <CopyField value={webhookUrl} />
-              <p className="text-[10px] text-muted-foreground">
-                Credenciais salvas no seu banco Supabase — não há cofre de segredo dedicado nesta versão; não exponha esta chave publicamente.
-              </p>
+              {webhookSecret ? (
+                <p className="text-[10px] text-amber-400">
+                  Este link só é exibido completo agora — copie e cole no Z-API antes de fechar esta janela. Se perder, reabrir este SDR não mostra o segredo de novo (gere outro excluindo e recriando o SDR).
+                </p>
+              ) : (
+                <p className="text-[10px] text-muted-foreground">
+                  Credenciais salvas no seu banco Supabase — não há cofre de segredo dedicado nesta versão; não exponha esta URL publicamente.
+                </p>
+              )}
             </div>
           )}
 

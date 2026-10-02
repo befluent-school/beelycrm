@@ -212,15 +212,29 @@ export interface Sdr {
   avatarColor?: string;   // cor do badge/avatar no Inbox
   active: boolean;
   waProvider?: WaProvider;
-  // Z-API
+  // Z-API — o valor real do token NUNCA chega ao navegador (loadAll()
+  // mascara via toSdr() em db.ts); só os campos has* indicam se existe uma
+  // credencial salva. zapiInstanceId não é secreto (identificador, não
+  // segredo) e continua chegando em texto puro.
   zapiInstanceId?: string;
-  zapiToken?: string;
-  zapiClientToken?: string;
-  // Meta Cloud API (oficial)
+  zapiToken?: string;        // presente só no instante do submit (campo preenchido pelo usuário), nunca vindo do load
+  zapiClientToken?: string;  // idem
+  hasZapiToken?: boolean;
+  hasZapiClientToken?: boolean;
+  // Meta Cloud API (oficial) — mesmo princípio
   metaPhoneNumberId?: string;
-  metaAccessToken?: string;
+  metaAccessToken?: string;  // idem zapiToken
   metaWabaId?: string;
-  metaVerifyToken?: string;
+  metaVerifyToken?: string;  // idem
+  hasMetaAccessToken?: boolean;
+  hasMetaVerifyToken?: boolean;
+  // Segredo do webhook — gerado pelo Beely (não é credencial de terceiro),
+  // confere a query string ?secret= nas chamadas ao webhook do Z-API, que
+  // não assina seus payloads (ao contrário de Instagram/Messenger, que usam
+  // X-Hub-Signature-256). Só vem preenchido na resposta do POST /api/sdrs
+  // logo após criar o SDR, nunca em loads subsequentes.
+  webhookSecret?: string;
+  hasWebhookSecret?: boolean;
   // Exibição
   phoneDisplay?: string;  // "+55 12 99999-9999"
   createdAt: string;
@@ -669,21 +683,57 @@ export const useStore = create<StoreState>()(
         set({ stageBenchmarks: STAGE_BENCHMARKS_BF.map((b) => ({ ...b })) });
       },
 
+      // addSdr/updateSdr: credenciais (zapiToken, zapiClientToken,
+      // metaAccessToken, metaVerifyToken) NUNCA ficam no store Zustand
+      // persistido (localStorage) — só passam em trânsito até /api/sdrs,
+      // que grava via service role, e o state local guarda apenas os
+      // booleanos has*. Antes disso, qualquer sessão do CRM (e o
+      // localStorage) tinha o token real do WhatsApp de cada SDR em texto
+      // puro — bastava abrir o DevTools.
       addSdr: (s) => {
         const id = uid();
-        const newSdr: Sdr = { ...s, id, createdAt: new Date().toISOString() };
+        const { zapiToken, zapiClientToken, metaAccessToken, metaVerifyToken, ...rest } = s;
+        const newSdr: Sdr = {
+          ...rest, id, createdAt: new Date().toISOString(),
+          hasZapiToken: !!zapiToken, hasZapiClientToken: !!zapiClientToken,
+          hasMetaAccessToken: !!metaAccessToken, hasMetaVerifyToken: !!metaVerifyToken,
+        };
         set((st) => ({ sdrs: [...st.sdrs, newSdr] }));
-        void db.upsertSdr(newSdr);
+        // webhookSecret só existe na resposta desta primeira chamada (a API
+        // só gera na criação) — guarda no store pra sdr-connect.tsx exibir
+        // a URL do webhook completa sem precisar de uma segunda chamada.
+        void fetch("/api/sdrs", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...rest, id, zapiToken, zapiClientToken, metaAccessToken, metaVerifyToken }),
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.webhookSecret) {
+              set((st) => ({ sdrs: st.sdrs.map((x) => (x.id === id ? { ...x, webhookSecret: data.webhookSecret, hasWebhookSecret: true } : x)) }));
+            }
+          })
+          .catch((e) => console.error("[sdr] falha ao salvar:", e));
         return id;
       },
       updateSdr: (id, patch) => {
-        set((s) => ({ sdrs: s.sdrs.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
-        const updated = get().sdrs.find((x) => x.id === id);
-        if (updated) void db.upsertSdr(updated);
+        const { zapiToken, zapiClientToken, metaAccessToken, metaVerifyToken, ...rest } = patch;
+        set((s) => ({
+          sdrs: s.sdrs.map((x) => (x.id === id ? {
+            ...x, ...rest,
+            hasZapiToken: zapiToken !== undefined ? !!zapiToken : x.hasZapiToken,
+            hasZapiClientToken: zapiClientToken !== undefined ? !!zapiClientToken : x.hasZapiClientToken,
+            hasMetaAccessToken: metaAccessToken !== undefined ? !!metaAccessToken : x.hasMetaAccessToken,
+            hasMetaVerifyToken: metaVerifyToken !== undefined ? !!metaVerifyToken : x.hasMetaVerifyToken,
+          } : x)),
+        }));
+        void fetch("/api/sdrs", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...rest, id, zapiToken, zapiClientToken, metaAccessToken, metaVerifyToken }),
+        }).catch((e) => console.error("[sdr] falha ao salvar:", e));
       },
       deleteSdr: (id) => {
         set((s) => ({ sdrs: s.sdrs.filter((x) => x.id !== id) }));
-        void db.deleteSdr(id);
+        void fetch(`/api/sdrs?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch((e) => console.error("[sdr] falha ao excluir:", e));
       },
       assignContactToSdr: (contactId, sdrId) => {
         const state = get();

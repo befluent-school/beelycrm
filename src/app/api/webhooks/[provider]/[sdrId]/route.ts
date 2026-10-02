@@ -49,9 +49,33 @@ async function fetchSdr(id: string): Promise<Sdr | null> {
     metaAccessToken: r.meta_access_token ?? undefined,
     metaWabaId: r.meta_waba_id ?? undefined,
     metaVerifyToken: r.meta_verify_token ?? undefined,
+    webhookSecret: r.webhook_secret ?? undefined,
     phoneDisplay: r.phone_display ?? undefined,
     createdAt: r.created_at,
   };
+}
+
+/**
+ * Z-API não assina os payloads do webhook (sem equivalente ao
+ * X-Hub-Signature-256 da Meta) — sem isso, qualquer pessoa que descubra a
+ * URL /api/webhooks/whatsapp/{sdrId} pode forjar uma mensagem "recebida"
+ * falsa (poluindo o Inbox, disparando follow-ups automáticos para um
+ * contato inventado). Exige o segredo gerado na criação do SDR via query
+ * string (?secret=...), comparado em tempo constante. SDRs criados antes
+ * desta mudança não têm webhookSecret salvo — para não quebrar webhooks já
+ * configurados, a checagem só bloqueia quando o SDR TEM um secret salvo.
+ */
+function verifyWebhookSecret(request: Request, sdr: Sdr): boolean {
+  if (!sdr.webhookSecret) return true; // SDR legado sem secret — não bloqueia (ver nota acima)
+  const provided = new URL(request.url).searchParams.get("secret") ?? "";
+  const expectedBuf = Buffer.from(sdr.webhookSecret);
+  const providedBuf = Buffer.from(provided);
+  if (expectedBuf.length !== providedBuf.length) return false;
+  try {
+    return timingSafeEqual(expectedBuf, providedBuf);
+  } catch {
+    return false;
+  }
 }
 
 /* ── GET — verificação de webhook (Meta hub.challenge) ──────── */
@@ -110,6 +134,12 @@ export async function POST(request: Request, ctx: Ctx) {
         return NextResponse.json({ error: "invalid_signature" }, { status: 401 });
       }
     }
+  }
+
+  /* Z-API (whatsapp) não assina payloads — exige o secret por SDR na query string. */
+  if (provider === "whatsapp" && !verifyWebhookSecret(request, sdr)) {
+    console.error(`[webhook:${provider}/${sdrId}] secret inválido ou ausente`);
+    return NextResponse.json({ error: "invalid_secret" }, { status: 401 });
   }
 
   let payload: unknown;

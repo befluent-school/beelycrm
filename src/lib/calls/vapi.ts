@@ -9,6 +9,7 @@
  *   { message: { type: "status-update" | "end-of-call-report" | "transcript" | ... } }
  */
 
+import { timingSafeEqual } from "crypto";
 import { env } from "@/lib/env";
 import type {
   AssistantConfig,
@@ -89,10 +90,21 @@ export function createVapiProvider(): CallProvider {
     },
 
     parseWebhook(body: unknown, headers: Headers): CallEvent | null {
-      // Validação opcional de segredo compartilhado.
-      if (env.vapiWebhookSecret) {
-        const got = headers.get("x-vapi-secret") || headers.get("x-vapi-signature");
-        if (got && got !== env.vapiWebhookSecret) return null;
+      // Validação do segredo compartilhado — antes, sem VAPI_WEBHOOK_SECRET
+      // configurado qualquer payload passava (fail-open), e mesmo COM a env
+      // var configurada, simplesmente omitir o header também passava (só um
+      // valor explicitamente errado era rejeitado). Um atacante podia forjar
+      // um "end-of-call-report" e sobrescrever log/transcrição/custo de
+      // qualquer chamada cujo providerCallId/callLogId ele adivinhasse.
+      if (!env.vapiWebhookSecret) {
+        console.error("[vapi] VAPI_WEBHOOK_SECRET não configurado — recusando webhook (fail-closed).");
+        return null;
+      }
+      const got = headers.get("x-vapi-secret") || headers.get("x-vapi-signature") || "";
+      const expectedBuf = Buffer.from(env.vapiWebhookSecret);
+      const gotBuf = Buffer.from(got);
+      if (expectedBuf.length !== gotBuf.length || !timingSafeEqual(expectedBuf, gotBuf)) {
+        return null;
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

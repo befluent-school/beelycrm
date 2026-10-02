@@ -47,8 +47,11 @@ create table if not exists sdrs (
   meta_waba_id text,
   meta_verify_token text,
   phone_display text,
+  webhook_secret text,
   created_at timestamptz default now()
 );
+
+alter table sdrs add column if not exists webhook_secret text;
 
 -- 3) Tabela conversation_assignments (reservada para uso futuro).
 create table if not exists conversation_assignments (

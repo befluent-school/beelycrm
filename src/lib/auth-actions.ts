@@ -53,7 +53,7 @@ export async function signupAction(_prev: AuthState, formData: FormData): Promis
   redirect("/dashboard");
 }
 
-/* ─── Esqueci minha senha (senha temporária por e-mail) ──── */
+/* ─── Esqueci minha senha (link de redefinição de uso único) ──── */
 export async function forgotPasswordAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const email = String(formData.get("email") ?? "").trim();
   if (!email) return { error: "Informe seu e-mail." };
@@ -61,22 +61,22 @@ export async function forgotPasswordAction(_prev: AuthState, formData: FormData)
   if (IS_DEMO) {
     return {
       notice:
-        "Se o e-mail existir, enviamos uma senha temporária. Use-a para entrar e você será solicitado a criar uma nova senha. (Modo demo: nenhum e-mail real é enviado.)",
+        "Se o e-mail existir, enviamos um link para redefinir sua senha. (Modo demo: nenhum e-mail real é enviado.)",
     };
   }
 
-  // Produção: a Edge Function gera senha temporária, marca must_change_password
-  // e envia via Resend. Aqui apenas disparamos a requisição.
+  // Produção: gera um link de recuperação de uso único (Supabase Auth) e
+  // envia via Resend — nenhuma senha real é criada ou trafega em texto puro.
   const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/auth/forgot-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
   });
   if (!res.ok) return { error: "Não foi possível processar. Tente novamente." };
-  return { notice: "Se o e-mail existir, enviamos uma senha temporária. Verifique sua caixa de entrada." };
+  return { notice: "Se o e-mail existir, enviamos um link para redefinir sua senha. Verifique sua caixa de entrada." };
 }
 
-/* ─── Trocar senha (após senha temporária) ──────────────── */
+/* ─── Trocar/definir senha (link de redefinição ou troca voluntária) ──── */
 export async function changePasswordAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const password = String(formData.get("password") ?? "");
   const confirm = String(formData.get("confirm") ?? "");

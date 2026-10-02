@@ -311,6 +311,10 @@ export interface DbSnapshot {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toSdr(r: any): Sdr {
+  // Nunca devolve o valor real de token/access token/verify token ao
+  // navegador — loadAll() roda no client. Só os booleanos has* indicam que
+  // existe uma credencial salva; o valor de verdade só existe server-side
+  // (webhooks, /api/inbox/send, /api/sdrs) usando a service role key.
   return {
     id:                 r.id,
     name:               r.name,
@@ -319,12 +323,12 @@ function toSdr(r: any): Sdr {
     active:             r.active ?? true,
     waProvider:         r.wa_provider ?? undefined,
     zapiInstanceId:     r.zapi_instance_id ?? undefined,
-    zapiToken:          r.zapi_token ?? undefined,
-    zapiClientToken:    r.zapi_client_token ?? undefined,
+    hasZapiToken:       !!r.zapi_token,
+    hasZapiClientToken: !!r.zapi_client_token,
     metaPhoneNumberId:  r.meta_phone_number_id ?? undefined,
-    metaAccessToken:    r.meta_access_token ?? undefined,
+    hasMetaAccessToken: !!r.meta_access_token,
     metaWabaId:         r.meta_waba_id ?? undefined,
-    metaVerifyToken:    r.meta_verify_token ?? undefined,
+    hasMetaVerifyToken: !!r.meta_verify_token,
     phoneDisplay:       r.phone_display ?? undefined,
     createdAt:          r.created_at,
   };

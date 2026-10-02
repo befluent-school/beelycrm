@@ -2,41 +2,48 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
- * Generates a temporary password, sets it on the user, flags must_change_password,
- * and e-mails it via Resend. The user logs in with the temp password and is forced
- * to set a new one inside the app.
+ * Gera um link de recuperação de uso único (Supabase Auth, type=recovery) e
+ * envia por e-mail via Resend. O link autentica o usuário numa sessão de
+ * recovery de curta duração ao ser clicado (via /auth/callback) e leva para
+ * /nova-senha, onde define a senha nova — nenhuma senha real é gerada nem
+ * trafega em texto puro em nenhum momento.
+ *
+ * ANTES: esta rota gerava uma senha REAL (generateTempPassword) e a
+ * aplicava direto na conta (admin.auth.admin.updateUserById), mandando-a em
+ * texto puro por e-mail — qualquer um que interceptasse esse e-mail (regra
+ * de encaminhamento, provedor de e-mail comprometido, inbox compartilhada)
+ * tinha uma credencial real e sem expiração imediatamente, e o reset
+ * sobrescrevia a senha ANTES de qualquer confirmação de uso, permitindo
+ * sequestro de conta só de pedir reset para o e-mail de outra pessoa.
  */
 export async function POST(request: Request) {
   const { email } = await request.json().catch(() => ({ email: "" }));
-  // Always return ok to avoid leaking which e-mails exist.
+  // Sempre responde ok — não revela se o e-mail existe na base.
   const ok = NextResponse.json({ ok: true });
   if (!email) return ok;
 
   const admin = createAdminClient();
   if (!admin) return ok;
 
-  // Find the user by email.
-  const { data: list } = await admin.auth.admin.listUsers();
-  const user = list?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
-  if (!user) return ok;
-
-  const tempPassword = generateTempPassword();
-  await admin.auth.admin.updateUserById(user.id, {
-    password: tempPassword,
-    user_metadata: { ...user.user_metadata, must_change_password: true },
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "recovery",
+    email,
+    options: { redirectTo: `${appUrl}/auth/callback?next=${encodeURIComponent("/nova-senha")}` },
   });
 
-  await sendTempPasswordEmail(email, tempPassword);
+  if (error || !data?.properties?.action_link) {
+    // Não loga o e-mail não encontrado como erro — é o caminho normal para
+    // e-mails que não existem na base (mantém a resposta genérica acima).
+    if (error) console.error("[forgot-password] generateLink falhou:", error.message);
+    return ok;
+  }
+
+  await sendResetLinkEmail(email, data.properties.action_link);
   return ok;
 }
 
-function generateTempPassword() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-  const bytes = crypto.getRandomValues(new Uint8Array(12));
-  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
-}
-
-async function sendTempPasswordEmail(to: string, tempPassword: string) {
+async function sendResetLinkEmail(to: string, link: string) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM ?? "Beely <no-reply@beely.app>";
   if (!apiKey) return;
@@ -47,13 +54,15 @@ async function sendTempPasswordEmail(to: string, tempPassword: string) {
     body: JSON.stringify({
       from,
       to,
-      subject: "Sua senha temporária",
+      subject: "Redefinir sua senha",
       html: `
         <div style="font-family:Inter,Arial,sans-serif;max-width:480px;margin:auto">
-          <h2 style="color:#E59313">Senha temporária</h2>
-          <p>Use a senha abaixo para acessar sua conta. Por segurança, você será solicitado a criar uma nova senha ao entrar.</p>
-          <p style="font-size:22px;font-weight:700;letter-spacing:2px;background:#f4f5f7;padding:14px;border-radius:8px;text-align:center">${tempPassword}</p>
-          <p style="color:#6b7280;font-size:12px">Se você não solicitou, ignore este e-mail.</p>
+          <h2 style="color:#E59313">Redefinir senha</h2>
+          <p>Clique no botão abaixo para definir uma nova senha. Este link funciona uma única vez e expira em pouco tempo.</p>
+          <p style="text-align:center;margin:24px 0">
+            <a href="${link}" style="display:inline-block;background:#E59313;color:#fff;font-weight:700;padding:12px 28px;border-radius:8px;text-decoration:none">Definir nova senha</a>
+          </p>
+          <p style="color:#6b7280;font-size:12px">Se você não solicitou, ignore este e-mail — sua senha atual continua válida.</p>
         </div>`,
     }),
   }).catch(() => {});

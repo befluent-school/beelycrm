@@ -16,7 +16,7 @@ export function ForgotForm() {
       <div className="text-center">
         <h1 className="font-display text-2xl font-bold">Esqueci minha senha</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Enviaremos uma senha temporária para o seu e-mail
+          Enviaremos um link para você redefinir sua senha
         </p>
       </div>
 
@@ -27,7 +27,7 @@ export function ForgotForm() {
           <Input id="email" name="email" type="email" placeholder="voce@empresa.com" autoComplete="email" required />
         </div>
         <Button type="submit" className="w-full" disabled={pending}>
-          {pending ? "Enviando..." : "Enviar senha temporária"}
+          {pending ? "Enviando..." : "Enviar link de redefinição"}
         </Button>
       </form>
 
