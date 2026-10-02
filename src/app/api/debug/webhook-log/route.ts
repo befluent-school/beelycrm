@@ -7,6 +7,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { debugGateOrResponse } from "@/lib/debug-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,10 @@ export async function POST(request: Request) {
   return NextResponse.json({ received: true, ts: new Date().toISOString() });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const gated = debugGateOrResponse(request);
+  if (gated) return gated;
+
   const client = getClient();
   if (!client) {
     return NextResponse.json({ error: "Supabase não configurado" }, { status: 500 });
@@ -97,7 +101,10 @@ export async function GET() {
   return NextResponse.json({ count: entries.length, entries });
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
+  const gated = debugGateOrResponse(request);
+  if (gated) return gated;
+
   const client = getClient();
   if (client) {
     await client.from("webhook_debug_log").delete().neq("id", 0);

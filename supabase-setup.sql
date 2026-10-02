@@ -18,6 +18,19 @@ begin
 end;
 $$;
 
+-- 1b) CRÍTICO: exec_sql roda com privilégio de quem a criou (security
+--     definer) e executa QUALQUER SQL recebido. Sem este REVOKE, o Postgres
+--     deixa funções novas em "public" executáveis por PUBLIC por padrão —
+--     no Supabase isso inclui os papéis "anon" e "authenticated", cuja
+--     chave (anon) é pública no JavaScript do site. Sem isso, qualquer
+--     visitante do site poderia rodar supabase.rpc('exec_sql', {sql: '...'})
+--     no console do navegador e ler/alterar/apagar o banco inteiro.
+--     Todo uso real de exec_sql no código do Beely já é feito com a
+--     service_role key (rotas de servidor) — nunca pela anon key — então
+--     este revoke não quebra nada do app.
+revoke execute on function exec_sql(text) from public, anon, authenticated;
+grant execute on function exec_sql(text) to service_role;
+
 -- 2) Tabela sdrs — SDRs com WhatsApp Business (Z-API ou Meta Cloud API).
 create table if not exists sdrs (
   id text primary key,

@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
+import { debugGateOrResponse } from "@/lib/debug-gate";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const gated = debugGateOrResponse(request);
+  if (gated) return gated;
+
   const instanceId  = process.env.ZAPI_INSTANCE_ID ?? process.env.NEXT_PUBLIC_ZAPI_INSTANCE_ID;
   const token       = process.env.ZAPI_TOKEN ?? process.env.NEXT_PUBLIC_ZAPI_TOKEN;
   const clientToken = process.env.ZAPI_CLIENT_TOKEN;

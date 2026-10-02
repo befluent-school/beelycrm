@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { debugGateOrResponse } from "@/lib/debug-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,10 @@ export const dynamic = "force-dynamic";
  *    que o navegador usa. Se falhar aqui, é RLS bloqueando (rode
  *    supabase-setup.sql, seção 7).
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const gated = debugGateOrResponse(request);
+  if (gated) return gated;
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;

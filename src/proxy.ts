@@ -19,6 +19,10 @@ const PROTECTED = [
   "/ligacoes",
   "/relatorios",
   "/configuracoes",
+  // /debug era público sem nenhuma autenticação — expunha conteúdo real de
+  // mensagens de WhatsApp (telefone, texto) e permitia enviar mensagem pelo
+  // número do Be Fluent a qualquer visitante que soubesse a URL.
+  "/debug",
 ];
 
 export async function proxy(request: NextRequest) {
