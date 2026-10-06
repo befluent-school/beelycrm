@@ -4,60 +4,47 @@
  * de Qualificação do mesmo funil — a conversa deixou de ser fria.
  */
 
-import { createClient } from "@supabase/supabase-js";
+import { and, eq, or } from "drizzle-orm";
+import { db as client, schema } from "@/db";
 
 const FOLLOWUP_RE = /follow[\s-]?up\s*([1-5])/i;
 const QUALIFICATION_RE = /qualifica/i;
 
-function getClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
-}
-
 export async function exitFollowupOnReply(phone: string) {
-  const client = getClient();
   if (!client) return;
 
   const phoneClean = phone.replace(/\D/g, "");
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: contacts } = await client.from("contacts").select("id, name, phone").limit(500);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const contact = (contacts ?? []).find((c: any) => (c.phone ?? "").replace(/\D/g, "") === phoneClean);
+  const contacts = await client.select({ id: schema.contacts.id, name: schema.contacts.name, phone: schema.contacts.phone })
+    .from(schema.contacts).limit(500);
+  const contact = contacts.find((c) => (c.phone ?? "").replace(/\D/g, "") === phoneClean);
   if (!contact) return;
 
-  const { data: deals } = await client
-    .from("deals")
-    .select("*")
-    .eq("status", "open")
-    .or(`contact.eq.${contact.name},contact_id.eq.${contact.id}`);
-  if (!deals || deals.length === 0) return;
+  const deals = await client.select().from(schema.deals).where(and(
+    eq(schema.deals.status, "open"),
+    or(eq(schema.deals.contact, contact.name), eq(schema.deals.contactId, contact.id)),
+  ));
+  if (deals.length === 0) return;
 
-  const { data: pipelines } = await client.from("pipelines").select("*");
+  const pipelines = await client.select().from(schema.pipelines);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const deal of deals as any[]) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pipeline = (pipelines ?? []).find((p: any) => p.id === deal.pipeline_id);
+  for (const deal of deals) {
+    const pipeline = pipelines.find((p) => p.id === deal.pipelineId);
     if (!pipeline) continue;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stage = (pipeline.stages ?? []).find((s: any) => s.id === deal.stage_id);
+    const stage = (pipeline.stages ?? []).find((s) => s.id === deal.stageId);
     if (!stage || !FOLLOWUP_RE.test(stage.name ?? "")) continue;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const qualStage = (pipeline.stages ?? []).find((s: any) => QUALIFICATION_RE.test(s.name ?? ""));
+    const qualStage = (pipeline.stages ?? []).find((s) => QUALIFICATION_RE.test(s.name ?? ""));
     const targetStage = qualStage ?? pipeline.stages?.[0];
     if (!targetStage) continue;
 
-    await client.from("deals").update({
-      stage_id: targetStage.id,
-      stage_entered_at: new Date().toISOString(),
+    await client.update(schema.deals).set({
+      stageId: targetStage.id,
+      stageEnteredAt: new Date(),
       history: [
         ...(deal.history ?? []),
         { ts: new Date().toISOString(), text: `Lead respondeu durante follow-up — movido de volta para ${targetStage.name}` },
       ],
-    }).eq("id", deal.id);
+    }).where(eq(schema.deals.id, deal.id));
   }
 }

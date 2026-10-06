@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { and, eq, gte } from "drizzle-orm";
+import { db as client, schema } from "@/db";
 import {
   getPlaybookTemplates,
   logPlaybookFollowup,
@@ -11,6 +12,9 @@ import { cronGateOrResponse } from "@/lib/cron-gate";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+type DealRow = typeof schema.deals.$inferSelect;
+type PipelineRow = typeof schema.pipelines.$inferSelect;
 
 /**
  * GET /api/cron/playbook-followups
@@ -38,60 +42,48 @@ export async function GET(request: Request) {
   const gated = cronGateOrResponse(request);
   if (gated) return gated;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    return NextResponse.json({ error: "supabase_not_configured" }, { status: 500 });
+  if (!client) {
+    return NextResponse.json({ error: "db_not_configured" }, { status: 500 });
   }
-  const supabase = createClient(url, key);
 
-  const [{ data: openDeals, error: openErr }, { data: lostDeals }, { data: pipelines }, { data: contacts }] =
-    await Promise.all([
-      supabase.from("deals").select("*").eq("status", "open"),
-      supabase.from("deals").select("*").eq("status", "lost"),
-      supabase.from("pipelines").select("*"),
-      supabase.from("contacts").select("id, name, phone, email"),
-    ]);
-
-  if (openErr) return NextResponse.json({ error: openErr.message }, { status: 500 });
+  const [openDeals, lostDeals, pipelines] = await Promise.all([
+    client.select().from(schema.deals).where(eq(schema.deals.status, "open")),
+    client.select().from(schema.deals).where(eq(schema.deals.status, "lost")),
+    client.select().from(schema.pipelines),
+  ]);
 
   const templates = await getPlaybookTemplates();
   const byKey = new Map(templates.map((t) => [t.situationKey, t]));
-  void contacts; // reservado para personalização futura do script por contato
 
   const todayKey = new Date().toISOString().slice(0, 10);
+  const todayStart = new Date(`${todayKey}T00:00:00Z`);
   const results: { dealId: string; contact: string; situation: string; label: string; action: string }[] = [];
 
-  const daysSince = (iso?: string | null) => {
-    if (!iso) return Infinity;
-    return (Date.now() - new Date(iso).getTime()) / 86_400_000;
+  const daysSince = (d?: Date | string | null) => {
+    if (!d) return Infinity;
+    const ms = d instanceof Date ? d.getTime() : new Date(d).getTime();
+    return (Date.now() - ms) / 86_400_000;
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const stageName = (deal: any): string => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pipeline = (pipelines ?? []).find((p: any) => p.id === deal.pipeline_id);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stage = (pipeline?.stages ?? []).find((s: any) => s.id === deal.stage_id);
+  const stageName = (deal: DealRow): string => {
+    const pipeline = pipelines.find((p: PipelineRow) => p.id === deal.pipelineId);
+    const stage = (pipeline?.stages ?? []).find((s) => s.id === deal.stageId);
     return (stage?.name ?? "").toLowerCase();
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const haystack = (deal: any): string => {
+  const haystack = (deal: DealRow): string => {
     const notes = (deal.notes ?? "").toLowerCase();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const hist = ((deal.history ?? []) as any[]).map((h) => (h.text ?? "").toLowerCase()).join(" ");
+    const hist = (deal.history ?? []).map((h) => (h.text ?? "").toLowerCase()).join(" ");
     return `${notes} ${hist}`;
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function deriveSituation(deal: any, isLost: boolean): FollowupSituation | null {
+  function deriveSituation(deal: DealRow, isLost: boolean): FollowupSituation | null {
     const sn = stageName(deal);
     const hay = haystack(deal);
-    const idle = daysSince(deal.last_activity_at ?? deal.stage_entered_at ?? deal.created_at);
+    const idle = daysSince(deal.lastActivityAt ?? deal.stageEnteredAt ?? deal.createdAt);
 
     if (isLost) {
-      const lostDays = daysSince(deal.updated_at ?? deal.created_at);
+      const lostDays = daysSince(deal.updatedAt ?? deal.createdAt);
       return lostDays >= 30 && lostDays <= 75 ? "reativacao_frio" : null;
     }
 
@@ -100,7 +92,7 @@ export async function GET(request: Request) {
       if (/contrato/.test(hay) && idle >= (byKey.get("contrato_sem_retorno")?.dayOffset ?? 8)) {
         return "contrato_sem_retorno";
       }
-      if ((deal.refusal_count ?? 0) >= 1 && /(desconto|caro|valor|pre[çc]o)/.test(hay)) {
+      if ((deal.refusalCount ?? 0) >= 1 && /(desconto|caro|valor|pre[çc]o)/.test(hay)) {
         return "pediu_desconto_sumiu";
       }
       if (idle >= (byKey.get("ultima_tentativa")?.dayOffset ?? 15)) return "ultima_tentativa";
@@ -123,22 +115,22 @@ export async function GET(request: Request) {
     return null;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async function handle(deal: any, isLost: boolean) {
+  async function handle(deal: DealRow, isLost: boolean) {
+    if (!client) return;
     const situation = deriveSituation(deal, isLost);
     if (!situation) return;
     const template = byKey.get(situation);
     if (!template || !template.active) return;
 
     // Anti-duplicação no mesmo dia (mesmo padrão do cron atual).
-    const { data: already } = await supabase
-      .from("followup_playbook_log")
-      .select("id")
-      .eq("deal_id", deal.id)
-      .eq("situation_key", situation)
-      .gte("triggered_at", `${todayKey}T00:00:00Z`)
+    const already = await client.select({ id: schema.followupPlaybookLog.id }).from(schema.followupPlaybookLog)
+      .where(and(
+        eq(schema.followupPlaybookLog.dealId, deal.id),
+        eq(schema.followupPlaybookLog.situationKey, situation),
+        gte(schema.followupPlaybookLog.triggeredAt, todayStart),
+      ))
       .limit(1);
-    if (already && already.length > 0) return;
+    if (already.length > 0) return;
 
     const firstName = String(deal.contact ?? "").split(" ")[0] || "tudo bem";
     const now = new Date();
@@ -152,29 +144,26 @@ export async function GET(request: Request) {
     const activityId =
       typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
     const label = SITUATION_LABELS[situation];
-    await supabase.from("activities").insert({
+    await client.insert(schema.activities).values({
       id: activityId,
       type: "task",
       title: `Follow-up Playbook: ${label}`,
       due: "Hoje",
-      due_date: todayKey,
-      due_time: template.suggestedTime || null,
+      dueDate: todayKey,
+      dueTime: template.suggestedTime || null,
       contact: deal.contact ?? null,
       done: false,
-      deal_id: deal.id,
+      dealId: deal.id,
       notes: `Situação: ${label} (D+${template.dayOffset}, ${template.channel}).\n\nScript sugerido:\n${script}`,
     });
 
-    await supabase
-      .from("deals")
-      .update({
-        last_activity_at: now.toISOString(),
-        history: [
-          ...(deal.history ?? []),
-          { ts: now.toISOString(), text: `Follow-up Playbook sugerido — ${label}` },
-        ],
-      })
-      .eq("id", deal.id);
+    await client.update(schema.deals).set({
+      lastActivityAt: now,
+      history: [
+        ...(deal.history ?? []),
+        { ts: now.toISOString(), text: `Follow-up Playbook sugerido — ${label}` },
+      ],
+    }).where(eq(schema.deals.id, deal.id));
 
     await logPlaybookFollowup(deal.id, situation, template.channel, true);
     results.push({
@@ -186,8 +175,8 @@ export async function GET(request: Request) {
     });
   }
 
-  for (const deal of openDeals ?? []) await handle(deal, false);
-  for (const deal of lostDeals ?? []) await handle(deal, true);
+  for (const deal of openDeals) await handle(deal, false);
+  for (const deal of lostDeals) await handle(deal, true);
 
   return NextResponse.json({ ok: true, processed: results.length, results });
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { isNull } from "drizzle-orm";
+import { db as client, schema } from "@/db";
 
 export const dynamic = "force-dynamic";
 
@@ -14,21 +15,16 @@ export const dynamic = "force-dynamic";
  * → SDRs & WhatsApp), nunca automaticamente.
  */
 export async function DELETE() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    return NextResponse.json({ ok: false, error: "Supabase não configurado" }, { status: 503 });
-  }
-  const supabase = createClient(url, key);
-
-  const { error, count } = await supabase
-    .from("inbox_messages")
-    .delete({ count: "exact" })
-    .is("sdr_id", null);
-
-  if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  if (!client) {
+    return NextResponse.json({ ok: false, error: "db_not_configured" }, { status: 503 });
   }
 
-  return NextResponse.json({ ok: true, deleted: count ?? 0 });
+  try {
+    const deleted = await client.delete(schema.inboxMessages)
+      .where(isNull(schema.inboxMessages.sdrId))
+      .returning({ id: schema.inboxMessages.id });
+    return NextResponse.json({ ok: true, deleted: deleted.length });
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+  }
 }

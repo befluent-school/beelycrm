@@ -6,11 +6,12 @@
  * (proposta parada há D+1, reunião terminou em "vou levar pro time" → D+3, etc.),
  * com scripts fixos redigidos no playbook.
  *
- * Persistido no Supabase via exec_sql (mesmo padrão de followup-store.ts), com
- * fallback em memória quando o Supabase não está configurado.
+ * Persistido no Postgres via Drizzle, com fallback em memória quando
+ * DATABASE_URL não está configurado (modo demo local).
  */
 
-import { createClient } from "@supabase/supabase-js";
+import { asc } from "drizzle-orm";
+import { db as client, schema } from "@/db";
 import { renderTemplate } from "@/lib/followup-store";
 import { SITUATION_LABELS, type FollowupSituation } from "@/lib/followup-playbook-labels";
 
@@ -94,88 +95,44 @@ const DEFAULT_PLAYBOOK_TEMPLATES: Omit<PlaybookFollowupTemplate, "updatedAt">[] 
   },
 ];
 
-function getClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
-}
-
-let schemaReady = false;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function ensureSchema(client: any) {
-  if (schemaReady) return;
-  schemaReady = true;
-  await client
-    .rpc("exec_sql", {
-      sql: `CREATE TABLE IF NOT EXISTS followup_playbook_templates (
-        situation_key TEXT PRIMARY KEY,
-        channel TEXT NOT NULL DEFAULT 'whatsapp',
-        message TEXT NOT NULL,
-        day_offset INTEGER NOT NULL DEFAULT 1,
-        suggested_time TEXT,
-        active BOOLEAN NOT NULL DEFAULT TRUE,
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )`,
-    })
-    .catch(() => null);
-  await client
-    .rpc("exec_sql", {
-      sql: `CREATE TABLE IF NOT EXISTS followup_playbook_log (
-        id BIGSERIAL PRIMARY KEY,
-        deal_id TEXT NOT NULL,
-        situation_key TEXT NOT NULL,
-        triggered_at TIMESTAMPTZ DEFAULT NOW(),
-        channel TEXT,
-        ok BOOLEAN DEFAULT TRUE
-      )`,
-    })
-    .catch(() => null);
-}
-
-/* ── Fallback em memória (modo demo / sem Supabase) ────────── */
+/* ── Fallback em memória (modo demo / sem Postgres) ────────── */
 let memTemplates: PlaybookFollowupTemplate[] | null = null;
 function memDefaults(): PlaybookFollowupTemplate[] {
   return DEFAULT_PLAYBOOK_TEMPLATES.map((t) => ({ ...t, updatedAt: new Date().toISOString() }));
 }
 
 export async function getPlaybookTemplates(): Promise<PlaybookFollowupTemplate[]> {
-  const client = getClient();
   if (!client) {
     if (!memTemplates) memTemplates = memDefaults();
     return memTemplates;
   }
-  await ensureSchema(client);
 
-  const { data, error } = await client
-    .from("followup_playbook_templates")
-    .select("*")
-    .order("day_offset");
+  const rows = await client.select().from(schema.followupPlaybookTemplates)
+    .orderBy(asc(schema.followupPlaybookTemplates.dayOffset));
 
-  if (error || !data || data.length === 0) {
+  if (rows.length === 0) {
     // Popula com os defaults na primeira vez.
-    await client.from("followup_playbook_templates").upsert(
+    await client.insert(schema.followupPlaybookTemplates).values(
       DEFAULT_PLAYBOOK_TEMPLATES.map((t) => ({
-        situation_key: t.situationKey,
+        situationKey: t.situationKey,
         channel: t.channel,
         message: t.message,
-        day_offset: t.dayOffset,
-        suggested_time: t.suggestedTime || null,
+        dayOffset: t.dayOffset,
+        suggestedTime: t.suggestedTime || null,
         active: t.active,
       }))
     );
     return memDefaults();
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return data.map((r: any) => ({
-    situationKey: r.situation_key as FollowupSituation,
+  return rows.map((r) => ({
+    situationKey: r.situationKey as FollowupSituation,
     channel: (r.channel === "email" ? "email" : "whatsapp") as "whatsapp" | "email",
     message: r.message,
-    dayOffset: r.day_offset ?? 1,
-    suggestedTime: r.suggested_time ?? "",
+    dayOffset: r.dayOffset ?? 1,
+    suggestedTime: r.suggestedTime ?? "",
     active: r.active ?? true,
-    updatedAt: r.updated_at,
+    updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt),
   }));
 }
 
@@ -186,7 +143,6 @@ export async function savePlaybookTemplate(
   const normChannel: "whatsapp" | "email" | undefined =
     patch.channel === undefined ? undefined : patch.channel === "email" ? "email" : "whatsapp";
 
-  const client = getClient();
   if (!client) {
     if (!memTemplates) memTemplates = memDefaults();
     memTemplates = memTemplates.map((t) =>
@@ -204,14 +160,25 @@ export async function savePlaybookTemplate(
     );
     return;
   }
-  await ensureSchema(client);
-  const row: Record<string, unknown> = { situation_key: situationKey, updated_at: new Date().toISOString() };
+
+  const row: Record<string, unknown> = { situationKey, updatedAt: new Date() };
   if (patch.channel !== undefined) row.channel = patch.channel;
   if (patch.message !== undefined) row.message = patch.message;
-  if (patch.dayOffset !== undefined) row.day_offset = patch.dayOffset;
-  if (patch.suggestedTime !== undefined) row.suggested_time = patch.suggestedTime || null;
+  if (patch.dayOffset !== undefined) row.dayOffset = patch.dayOffset;
+  if (patch.suggestedTime !== undefined) row.suggestedTime = patch.suggestedTime || null;
   if (patch.active !== undefined) row.active = patch.active;
-  await client.from("followup_playbook_templates").upsert(row);
+
+  await client.insert(schema.followupPlaybookTemplates)
+    .values({
+      situationKey,
+      channel: (row.channel as string) ?? "whatsapp",
+      message: (row.message as string) ?? "",
+      dayOffset: (row.dayOffset as number) ?? 1,
+      suggestedTime: (row.suggestedTime as string | null) ?? null,
+      active: (row.active as boolean) ?? true,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({ target: schema.followupPlaybookTemplates.situationKey, set: row });
 }
 
 export async function logPlaybookFollowup(
@@ -220,15 +187,8 @@ export async function logPlaybookFollowup(
   channel: string,
   ok: boolean
 ): Promise<void> {
-  const client = getClient();
   if (!client) return;
-  await ensureSchema(client);
-  await client.from("followup_playbook_log").insert({
-    deal_id: dealId,
-    situation_key: situationKey,
-    channel,
-    ok,
-  });
+  await client.insert(schema.followupPlaybookLog).values({ dealId, situationKey, channel, ok });
 }
 
 /** Renderiza o script substituindo {{primeiroNome}}, {{dia}}, {{mes}} etc. */
@@ -236,4 +196,4 @@ export function renderPlaybookMessage(message: string, vars: Record<string, stri
   return renderTemplate(message, vars);
 }
 
-export { getClient as getPlaybookClient, DEFAULT_PLAYBOOK_TEMPLATES };
+export { DEFAULT_PLAYBOOK_TEMPLATES };

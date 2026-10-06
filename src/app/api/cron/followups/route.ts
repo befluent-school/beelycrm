@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { and, eq, gte } from "drizzle-orm";
+import { db as client, schema } from "@/db";
 import { getTemplates, logFollowupSent, renderTemplate } from "@/lib/followup-store";
 import { pushMessage } from "@/lib/message-store";
 import { getEmailProvider } from "@/lib/email";
@@ -26,37 +27,28 @@ export async function GET(request: Request) {
   const gated = cronGateOrResponse(request);
   if (gated) return gated;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    return NextResponse.json({ error: "supabase_not_configured" }, { status: 500 });
+  if (!client) {
+    return NextResponse.json({ error: "db_not_configured" }, { status: 500 });
   }
-  const supabase = createClient(url, key);
 
-  const [{ data: deals, error: dealsErr }, { data: pipelines }, { data: contacts }] = await Promise.all([
-    supabase.from("deals").select("*").eq("status", "open"),
-    supabase.from("pipelines").select("*"),
-    supabase.from("contacts").select("id, name, phone, email"),
+  const [deals, pipelines, contacts] = await Promise.all([
+    client.select().from(schema.deals).where(eq(schema.deals.status, "open")),
+    client.select().from(schema.pipelines),
+    client.select({ id: schema.contacts.id, name: schema.contacts.name, phone: schema.contacts.phone, email: schema.contacts.email }).from(schema.contacts),
   ]);
 
-  if (dealsErr) return NextResponse.json({ error: dealsErr.message }, { status: 500 });
-
   const templates = await getTemplates();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const contactByName = new Map((contacts ?? []).map((c: any) => [c.name, c]));
+  const contactByName = new Map(contacts.map((c) => [c.name, c]));
 
   const FOLLOWUP_RE = /follow[\s-]?up\s*([1-5])/i;
 
   const results: { dealId: string; contact: string; step: number; action: string }[] = [];
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayStart = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const deal of (deals ?? []) as any[]) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pipeline = (pipelines ?? []).find((p: any) => p.id === deal.pipeline_id);
+  for (const deal of deals) {
+    const pipeline = pipelines.find((p) => p.id === deal.pipelineId);
     if (!pipeline) continue;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stage = (pipeline.stages ?? []).find((s: any) => s.id === deal.stage_id);
+    const stage = (pipeline.stages ?? []).find((s) => s.id === deal.stageId);
     if (!stage) continue;
 
     const match = FOLLOWUP_RE.exec(stage.name ?? "");
@@ -64,26 +56,26 @@ export async function GET(request: Request) {
     const step = Number(match[1]);
 
     // Evita disparo duplicado no mesmo dia (verifica log)
-    const { data: alreadySent } = await supabase
-      .from("followup_log")
-      .select("id")
-      .eq("deal_id", deal.id)
-      .eq("step", step)
-      .gte("sent_at", `${todayKey}T00:00:00Z`)
+    const alreadySent = await client.select({ id: schema.followupLog.id }).from(schema.followupLog)
+      .where(and(
+        eq(schema.followupLog.dealId, deal.id),
+        eq(schema.followupLog.step, step),
+        gte(schema.followupLog.sentAt, todayStart),
+      ))
       .limit(1);
-    if (alreadySent && alreadySent.length > 0) continue;
+    if (alreadySent.length > 0) continue;
 
     const template = templates.find((t) => t.step === step);
     if (!template) continue;
 
-    const contact = contactByName.get(deal.contact);
+    const contact = contactByName.get(deal.contact ?? "");
     const phone = contact?.phone ?? "";
     const firstName = String(deal.contact ?? "").split(" ")[0] || "tudo bem?";
     const text = renderTemplate(template.message, { primeiroNome: firstName });
 
     let ok = false;
     if (template.channel === "whatsapp" && phone) {
-      ok = await sendWhatsApp(phone, text, deal.contact);
+      ok = await sendWhatsApp(phone, text, deal.contact ?? "");
     } else if (template.channel === "email" && contact?.email) {
       ok = await sendEmail(contact.email, template.subject ?? "Continuando nosso papo", text);
     }
@@ -92,25 +84,24 @@ export async function GET(request: Request) {
 
     // Avança etapa ou descarta se já era a última
     if (step >= 5) {
-      await supabase.from("deals").update({
+      await client.update(schema.deals).set({
         status: "lost",
-        lost_reason: "Sem resposta após 5 follow-ups",
+        lostReason: "Sem resposta após 5 follow-ups",
         history: [...(deal.history ?? []), { ts: new Date().toISOString(), text: "Descartado automaticamente — 5 follow-ups sem resposta" }],
-      }).eq("id", deal.id);
-      results.push({ dealId: deal.id, contact: deal.contact, step, action: "descartado" });
+      }).where(eq(schema.deals.id, deal.id));
+      results.push({ dealId: deal.id, contact: deal.contact ?? "", step, action: "descartado" });
     } else {
       const nextStageName = stage.name.replace(/([1-5])/, String(step + 1));
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const nextStage = (pipeline.stages ?? []).find((s: any) => s.name.toLowerCase() === nextStageName.toLowerCase());
+      const nextStage = (pipeline.stages ?? []).find((s) => s.name.toLowerCase() === nextStageName.toLowerCase());
       if (nextStage) {
-        await supabase.from("deals").update({
-          stage_id: nextStage.id,
-          stage_entered_at: new Date().toISOString(),
+        await client.update(schema.deals).set({
+          stageId: nextStage.id,
+          stageEnteredAt: new Date(),
           history: [...(deal.history ?? []), { ts: new Date().toISOString(), text: `Follow-up ${step} enviado sem resposta anterior — avançado para ${nextStage.name}` }],
-        }).eq("id", deal.id);
-        results.push({ dealId: deal.id, contact: deal.contact, step, action: `avançado para follow-up ${step + 1}` });
+        }).where(eq(schema.deals.id, deal.id));
+        results.push({ dealId: deal.id, contact: deal.contact ?? "", step, action: `avançado para follow-up ${step + 1}` });
       } else {
-        results.push({ dealId: deal.id, contact: deal.contact, step, action: "mensagem enviada (próxima etapa não encontrada)" });
+        results.push({ dealId: deal.id, contact: deal.contact ?? "", step, action: "mensagem enviada (próxima etapa não encontrada)" });
       }
     }
   }

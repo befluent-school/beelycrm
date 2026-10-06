@@ -1,14 +1,10 @@
 /**
- * Persistência de remarketing por e-mail.
- *
- * Segue o padrão do resto do backend do Beely: Supabase REST via service role,
- * com auto-criação de tabelas (exec_sql) e fallback em memória quando o Supabase
- * não está configurado (modo demo). O schema Drizzle em src/db/schema.ts é a
- * fonte de verdade para migrações formais (npm run db:generate / db:push).
+ * Persistência de remarketing por e-mail — Postgres via Drizzle, com
+ * fallback em memória quando DATABASE_URL não está configurado (modo demo).
  */
 
-import { createClient } from "@supabase/supabase-js";
-import { env } from "@/lib/env";
+import { desc, eq } from "drizzle-orm";
+import { db as client, schema } from "@/db";
 
 export interface EmailAccount {
   id: string;
@@ -59,12 +55,8 @@ export interface EmailSend {
 const uid = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 
-function client() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = env.supabaseServiceRoleKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
+const iso = (d: Date | string | null | undefined) =>
+  d == null ? null : d instanceof Date ? d.toISOString() : d;
 
 /* ─── Fallback em memória (modo demo) ─────────────────────── */
 const mem = {
@@ -74,135 +66,82 @@ const mem = {
   sends: [] as EmailSend[],
 };
 
-let schemaReady = false;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function ensureSchema(c: any) {
-  if (schemaReady) return;
-  schemaReady = true;
-  const stmts = [
-    `CREATE TABLE IF NOT EXISTS email_accounts (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      provider TEXT NOT NULL DEFAULT 'gmail',
-      from_email TEXT NOT NULL,
-      from_name TEXT,
-      oauth_refresh_token TEXT,
-      status TEXT NOT NULL DEFAULT 'disconnected',
-      last_error TEXT,
-      connected_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )`,
-    `CREATE TABLE IF NOT EXISTS email_templates (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      name TEXT NOT NULL,
-      subject TEXT NOT NULL,
-      body_html TEXT NOT NULL,
-      body_text TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )`,
-    `CREATE TABLE IF NOT EXISTS email_campaigns (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      name TEXT NOT NULL,
-      template_id UUID,
-      status TEXT NOT NULL DEFAULT 'draft',
-      audience_filter JSONB NOT NULL DEFAULT '{}',
-      scheduled_at TIMESTAMPTZ,
-      stats JSONB NOT NULL DEFAULT '{"sent":0,"opened":0,"clicked":0,"bounced":0,"failed":0}',
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )`,
-    `CREATE TABLE IF NOT EXISTS email_sends (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      campaign_id UUID,
-      contact_id UUID,
-      to_email TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'queued',
-      provider_message_id TEXT,
-      error TEXT,
-      sent_at TIMESTAMPTZ,
-      opened_at TIMESTAMPTZ,
-      clicked_at TIMESTAMPTZ
-    )`,
-  ];
-  for (const sql of stmts) await c.rpc("exec_sql", { sql }).catch(() => null);
-}
-
 /* ─── Conta de envio ─────────────────────────────────────── */
 export async function getEmailAccount(): Promise<EmailAccount | null> {
-  const c = client();
-  if (!c) return mem.account;
-  await ensureSchema(c);
-  const { data } = await c.from("email_accounts").select("*").order("created_at", { ascending: false }).limit(1);
-  const r = data?.[0];
+  if (!client) return mem.account;
+  const rows = await client.select().from(schema.emailAccounts)
+    .orderBy(desc(schema.emailAccounts.createdAt)).limit(1);
+  const r = rows[0];
   if (!r) return null;
   return {
-    id: r.id, provider: r.provider, fromEmail: r.from_email, fromName: r.from_name,
-    oauthRefreshToken: r.oauth_refresh_token, status: r.status, lastError: r.last_error, connectedAt: r.connected_at,
+    id: r.id, provider: r.provider as EmailAccount["provider"], fromEmail: r.fromEmail, fromName: r.fromName ?? undefined,
+    oauthRefreshToken: r.oauthRefreshToken, status: r.status as EmailAccount["status"],
+    lastError: r.lastError, connectedAt: iso(r.connectedAt),
   };
 }
 
 export async function saveEmailAccount(a: Omit<EmailAccount, "id"> & { id?: string }): Promise<EmailAccount> {
-  const c = client();
   const record: EmailAccount = { id: a.id ?? uid(), ...a };
-  if (!c) { mem.account = record; return record; }
-  await ensureSchema(c);
-  await c.from("email_accounts").upsert({
-    id: record.id, provider: record.provider, from_email: record.fromEmail, from_name: record.fromName ?? null,
-    oauth_refresh_token: record.oauthRefreshToken ?? null, status: record.status,
-    last_error: record.lastError ?? null, connected_at: record.connectedAt ?? null,
+  if (!client) { mem.account = record; return record; }
+  await client.insert(schema.emailAccounts).values({
+    id: record.id, provider: record.provider, fromEmail: record.fromEmail, fromName: record.fromName ?? null,
+    oauthRefreshToken: record.oauthRefreshToken ?? null, status: record.status,
+    lastError: record.lastError ?? null, connectedAt: record.connectedAt ? new Date(record.connectedAt) : null,
+  }).onConflictDoUpdate({
+    target: schema.emailAccounts.id,
+    set: {
+      provider: record.provider, fromEmail: record.fromEmail, fromName: record.fromName ?? null,
+      oauthRefreshToken: record.oauthRefreshToken ?? null, status: record.status,
+      lastError: record.lastError ?? null, connectedAt: record.connectedAt ? new Date(record.connectedAt) : null,
+    },
   });
   return record;
 }
 
 /* ─── Templates ──────────────────────────────────────────── */
 export async function listTemplates(): Promise<EmailTemplate[]> {
-  const c = client();
-  if (!c) return mem.templates;
-  await ensureSchema(c);
-  const { data } = await c.from("email_templates").select("*").order("created_at", { ascending: false });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []).map((r: any) => ({
-    id: r.id, name: r.name, subject: r.subject, bodyHtml: r.body_html, bodyText: r.body_text, createdAt: r.created_at,
+  if (!client) return mem.templates;
+  const rows = await client.select().from(schema.emailTemplates).orderBy(desc(schema.emailTemplates.createdAt));
+  return rows.map((r) => ({
+    id: r.id, name: r.name, subject: r.subject, bodyHtml: r.bodyHtml, bodyText: r.bodyText, createdAt: iso(r.createdAt)!,
   }));
 }
 
 export async function saveTemplate(t: Partial<EmailTemplate> & { name: string; subject: string; bodyHtml: string }): Promise<EmailTemplate> {
-  const c = client();
   const record: EmailTemplate = {
     id: t.id ?? uid(), name: t.name, subject: t.subject, bodyHtml: t.bodyHtml,
     bodyText: t.bodyText ?? null, createdAt: t.createdAt ?? new Date().toISOString(),
   };
-  if (!c) {
+  if (!client) {
     const i = mem.templates.findIndex((x) => x.id === record.id);
     if (i >= 0) mem.templates[i] = record; else mem.templates.unshift(record);
     return record;
   }
-  await ensureSchema(c);
-  await c.from("email_templates").upsert({
+  await client.insert(schema.emailTemplates).values({
     id: record.id, name: record.name, subject: record.subject,
-    body_html: record.bodyHtml, body_text: record.bodyText ?? null,
+    bodyHtml: record.bodyHtml, bodyText: record.bodyText ?? null,
+  }).onConflictDoUpdate({
+    target: schema.emailTemplates.id,
+    set: { name: record.name, subject: record.subject, bodyHtml: record.bodyHtml, bodyText: record.bodyText ?? null },
   });
   return record;
 }
 
 export async function deleteTemplate(id: string): Promise<void> {
-  const c = client();
-  if (!c) { mem.templates = mem.templates.filter((t) => t.id !== id); return; }
-  await ensureSchema(c);
-  await c.from("email_templates").delete().eq("id", id);
+  if (!client) { mem.templates = mem.templates.filter((t) => t.id !== id); return; }
+  await client.delete(schema.emailTemplates).where(eq(schema.emailTemplates.id, id));
 }
 
 /* ─── Campanhas ──────────────────────────────────────────── */
 const ZERO_STATS = { sent: 0, opened: 0, clicked: 0, bounced: 0, failed: 0 };
 
 export async function listCampaigns(): Promise<EmailCampaign[]> {
-  const c = client();
-  if (!c) return mem.campaigns;
-  await ensureSchema(c);
-  const { data } = await c.from("email_campaigns").select("*").order("created_at", { ascending: false });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []).map((r: any) => ({
-    id: r.id, name: r.name, templateId: r.template_id, status: r.status,
-    audienceFilter: r.audience_filter ?? {}, scheduledAt: r.scheduled_at,
-    stats: r.stats ?? { ...ZERO_STATS }, createdAt: r.created_at,
+  if (!client) return mem.campaigns;
+  const rows = await client.select().from(schema.emailCampaigns).orderBy(desc(schema.emailCampaigns.createdAt));
+  return rows.map((r) => ({
+    id: r.id, name: r.name, templateId: r.templateId, status: r.status as CampaignStatus,
+    audienceFilter: r.audienceFilter ?? {}, scheduledAt: iso(r.scheduledAt),
+    stats: r.stats ?? { ...ZERO_STATS }, createdAt: iso(r.createdAt)!,
   }));
 }
 
@@ -213,77 +152,74 @@ export async function getCampaign(id: string): Promise<EmailCampaign | null> {
 export async function saveCampaign(
   p: Partial<EmailCampaign> & { name: string }
 ): Promise<EmailCampaign> {
-  const c = client();
   const record: EmailCampaign = {
     id: p.id ?? uid(), name: p.name, templateId: p.templateId ?? null,
     status: p.status ?? "draft", audienceFilter: p.audienceFilter ?? {},
     scheduledAt: p.scheduledAt ?? null, stats: p.stats ?? { ...ZERO_STATS },
     createdAt: p.createdAt ?? new Date().toISOString(),
   };
-  if (!c) {
+  if (!client) {
     const i = mem.campaigns.findIndex((x) => x.id === record.id);
     if (i >= 0) mem.campaigns[i] = record; else mem.campaigns.unshift(record);
     return record;
   }
-  await ensureSchema(c);
-  await c.from("email_campaigns").upsert({
-    id: record.id, name: record.name, template_id: record.templateId,
-    status: record.status, audience_filter: record.audienceFilter,
-    scheduled_at: record.scheduledAt, stats: record.stats,
+  await client.insert(schema.emailCampaigns).values({
+    id: record.id, name: record.name, templateId: record.templateId,
+    status: record.status, audienceFilter: record.audienceFilter,
+    scheduledAt: record.scheduledAt ? new Date(record.scheduledAt) : null, stats: record.stats,
+  }).onConflictDoUpdate({
+    target: schema.emailCampaigns.id,
+    set: {
+      name: record.name, templateId: record.templateId, status: record.status,
+      audienceFilter: record.audienceFilter,
+      scheduledAt: record.scheduledAt ? new Date(record.scheduledAt) : null, stats: record.stats,
+    },
   });
   return record;
 }
 
 export async function deleteCampaign(id: string): Promise<void> {
-  const c = client();
-  if (!c) { mem.campaigns = mem.campaigns.filter((x) => x.id !== id); return; }
-  await ensureSchema(c);
-  await c.from("email_campaigns").delete().eq("id", id);
+  if (!client) { mem.campaigns = mem.campaigns.filter((x) => x.id !== id); return; }
+  await client.delete(schema.emailCampaigns).where(eq(schema.emailCampaigns.id, id));
 }
 
 /* ─── Envios individuais ─────────────────────────────────── */
 export async function createSend(s: Omit<EmailSend, "id" | "status"> & { status?: EmailSend["status"] }): Promise<EmailSend> {
-  const c = client();
   const record: EmailSend = { id: uid(), status: s.status ?? "queued", ...s };
-  if (!c) { mem.sends.unshift(record); return record; }
-  await ensureSchema(c);
-  await c.from("email_sends").insert({
-    id: record.id, campaign_id: record.campaignId ?? null, contact_id: record.contactId ?? null,
-    to_email: record.toEmail, status: record.status, provider_message_id: record.providerMessageId ?? null,
-    error: record.error ?? null, sent_at: record.sentAt ?? null,
+  if (!client) { mem.sends.unshift(record); return record; }
+  await client.insert(schema.emailSends).values({
+    id: record.id, campaignId: record.campaignId ?? null, contactId: record.contactId ?? null,
+    toEmail: record.toEmail, status: record.status, providerMessageId: record.providerMessageId ?? null,
+    error: record.error ?? null, sentAt: record.sentAt ? new Date(record.sentAt) : null,
   });
   return record;
 }
 
 export async function updateSend(id: string, patch: Partial<EmailSend>): Promise<void> {
-  const c = client();
-  if (!c) {
+  if (!client) {
     const i = mem.sends.findIndex((x) => x.id === id);
     if (i >= 0) mem.sends[i] = { ...mem.sends[i], ...patch };
     return;
   }
-  await ensureSchema(c);
   const row: Record<string, unknown> = {};
   if (patch.status !== undefined) row.status = patch.status;
-  if (patch.providerMessageId !== undefined) row.provider_message_id = patch.providerMessageId;
+  if (patch.providerMessageId !== undefined) row.providerMessageId = patch.providerMessageId;
   if (patch.error !== undefined) row.error = patch.error;
-  if (patch.sentAt !== undefined) row.sent_at = patch.sentAt;
-  if (patch.openedAt !== undefined) row.opened_at = patch.openedAt;
-  if (patch.clickedAt !== undefined) row.clicked_at = patch.clickedAt;
-  await c.from("email_sends").update(row).eq("id", id);
+  if (patch.sentAt !== undefined) row.sentAt = patch.sentAt ? new Date(patch.sentAt) : null;
+  if (patch.openedAt !== undefined) row.openedAt = patch.openedAt ? new Date(patch.openedAt) : null;
+  if (patch.clickedAt !== undefined) row.clickedAt = patch.clickedAt ? new Date(patch.clickedAt) : null;
+  await client.update(schema.emailSends).set(row).where(eq(schema.emailSends.id, id));
 }
 
 export async function findSend(id: string): Promise<EmailSend | null> {
-  const c = client();
-  if (!c) return mem.sends.find((x) => x.id === id) ?? null;
-  await ensureSchema(c);
-  const { data } = await c.from("email_sends").select("*").eq("id", id).limit(1);
-  const r = data?.[0];
+  if (!client) return mem.sends.find((x) => x.id === id) ?? null;
+  const rows = await client.select().from(schema.emailSends).where(eq(schema.emailSends.id, id)).limit(1);
+  const r = rows[0];
   if (!r) return null;
   return {
-    id: r.id, campaignId: r.campaign_id, contactId: r.contact_id, toEmail: r.to_email,
-    status: r.status, providerMessageId: r.provider_message_id, error: r.error,
-    sentAt: r.sent_at, openedAt: r.opened_at, clickedAt: r.clicked_at,
+    id: r.id, campaignId: r.campaignId, contactId: r.contactId, toEmail: r.toEmail,
+    status: r.status as EmailSend["status"], providerMessageId: r.providerMessageId, error: r.error,
+    sentAt: iso(r.sentAt), openedAt: iso(r.openedAt), clickedAt: iso(r.clickedAt),
   };
 }
 

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { createHmac, timingSafeEqual } from "crypto";
 import { handleWhatsApp, handleInstagram, handleMessenger } from "@/lib/wa-webhook-handlers";
 import { logWebhookPayload } from "@/app/api/debug/webhook-log/route";
+import { fetchSdrWithSecrets } from "@/lib/sdrs-server";
 import type { Sdr } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -27,33 +27,7 @@ function verifyMetaSignature(body: string, signature: string | null, secret: str
   }
 }
 
-async function fetchSdr(id: string): Promise<Sdr | null> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  const supabase = createClient(url, key);
-  const { data, error } = await supabase.from("sdrs").select("*").eq("id", id).limit(1);
-  if (error || !data || data.length === 0) return null;
-  const r = data[0];
-  return {
-    id: r.id,
-    name: r.name,
-    email: r.email ?? undefined,
-    avatarColor: r.avatar_color ?? undefined,
-    active: r.active ?? true,
-    waProvider: r.wa_provider ?? undefined,
-    zapiInstanceId: r.zapi_instance_id ?? undefined,
-    zapiToken: r.zapi_token ?? undefined,
-    zapiClientToken: r.zapi_client_token ?? undefined,
-    metaPhoneNumberId: r.meta_phone_number_id ?? undefined,
-    metaAccessToken: r.meta_access_token ?? undefined,
-    metaWabaId: r.meta_waba_id ?? undefined,
-    metaVerifyToken: r.meta_verify_token ?? undefined,
-    webhookSecret: r.webhook_secret ?? undefined,
-    phoneDisplay: r.phone_display ?? undefined,
-    createdAt: r.created_at,
-  };
-}
+const fetchSdr = fetchSdrWithSecrets;
 
 /**
  * Z-API não assina os payloads do webhook (sem equivalente ao
@@ -115,7 +89,7 @@ export async function POST(request: Request, ctx: Ctx) {
       try { payload = JSON.parse(rawBody); } catch { payload = { raw: rawBody.slice(0, 500) }; }
       await logWebhookPayload({
         provider, sdrId, error: "sdr_not_found",
-        hint: "O SDR informado na URL do webhook não existe no Supabase (ou a tabela sdrs não foi criada — veja /api/debug/supabase-status).",
+        hint: "O SDR informado na URL do webhook não existe no banco.",
         ...(typeof payload === "object" && payload ? payload : {}),
       });
     } catch (e) {

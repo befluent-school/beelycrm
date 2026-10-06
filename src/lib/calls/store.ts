@@ -1,11 +1,10 @@
 /**
- * Persistência de Ligações com IA (campanhas + logs).
- * Mesmo padrão de src/lib/email/store.ts: Supabase REST com auto-criação de
- * tabelas e fallback em memória no modo demo.
+ * Persistência de Ligações com IA (campanhas + logs) — Postgres via Drizzle,
+ * com fallback em memória no modo demo (DATABASE_URL ausente).
  */
 
-import { createClient } from "@supabase/supabase-js";
-import { env } from "@/lib/env";
+import { desc, eq } from "drizzle-orm";
+import { db as client, schema } from "@/db";
 import type { AssistantConfig } from "./provider";
 
 export type CampaignStatus = "draft" | "scheduled" | "running" | "paused" | "done";
@@ -52,64 +51,19 @@ const ZERO_STATS: CallCampaign["stats"] = {
 const uid = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 
-function client() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = env.supabaseServiceRoleKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
+const iso = (d: Date | string | null | undefined) =>
+  d == null ? null : d instanceof Date ? d.toISOString() : d;
 
 const mem = { campaigns: [] as CallCampaign[], logs: [] as CallLog[] };
 
-let schemaReady = false;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function ensureSchema(c: any) {
-  if (schemaReady) return;
-  schemaReady = true;
-  const stmts = [
-    `CREATE TABLE IF NOT EXISTS call_campaigns (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      name TEXT NOT NULL,
-      provider TEXT NOT NULL DEFAULT 'vapi',
-      assistant_config JSONB NOT NULL DEFAULT '{}',
-      audience_filter JSONB NOT NULL DEFAULT '{}',
-      status TEXT NOT NULL DEFAULT 'draft',
-      stats JSONB NOT NULL DEFAULT '{"dialed":0,"answered":0,"completed":0,"failed":0,"totalCostCents":0,"totalDurationSec":0}',
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )`,
-    `CREATE TABLE IF NOT EXISTS call_logs (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      campaign_id UUID,
-      contact_id UUID,
-      provider TEXT NOT NULL DEFAULT 'vapi',
-      provider_call_id TEXT,
-      to_number TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'queued',
-      duration_sec INTEGER NOT NULL DEFAULT 0,
-      cost_cents INTEGER NOT NULL DEFAULT 0,
-      recording_url TEXT,
-      transcript JSONB DEFAULT '[]',
-      summary TEXT,
-      ended_reason TEXT,
-      started_at TIMESTAMPTZ,
-      ended_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )`,
-  ];
-  for (const sql of stmts) await c.rpc("exec_sql", { sql }).catch(() => null);
-}
-
 /* ─── Campanhas ──────────────────────────────────────────── */
 export async function listCallCampaigns(): Promise<CallCampaign[]> {
-  const c = client();
-  if (!c) return mem.campaigns;
-  await ensureSchema(c);
-  const { data } = await c.from("call_campaigns").select("*").order("created_at", { ascending: false });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []).map((r: any) => ({
-    id: r.id, name: r.name, provider: r.provider, assistantConfig: r.assistant_config ?? {},
-    audienceFilter: r.audience_filter ?? {}, status: r.status,
-    stats: r.stats ?? { ...ZERO_STATS }, createdAt: r.created_at,
+  if (!client) return mem.campaigns;
+  const rows = await client.select().from(schema.callCampaigns).orderBy(desc(schema.callCampaigns.createdAt));
+  return rows.map((r) => ({
+    id: r.id, name: r.name, provider: r.provider as CallCampaign["provider"], assistantConfig: (r.assistantConfig ?? {}) as AssistantConfig,
+    audienceFilter: r.audienceFilter ?? {}, status: r.status as CampaignStatus,
+    stats: r.stats ?? { ...ZERO_STATS }, createdAt: iso(r.createdAt)!,
   }));
 }
 
@@ -118,64 +72,61 @@ export async function getCallCampaign(id: string): Promise<CallCampaign | null> 
 }
 
 export async function saveCallCampaign(p: Partial<CallCampaign> & { name: string }): Promise<CallCampaign> {
-  const c = client();
   const record: CallCampaign = {
     id: p.id ?? uid(), name: p.name, provider: p.provider ?? "vapi",
     assistantConfig: p.assistantConfig ?? {}, audienceFilter: p.audienceFilter ?? {},
     status: p.status ?? "draft", stats: p.stats ?? { ...ZERO_STATS },
     createdAt: p.createdAt ?? new Date().toISOString(),
   };
-  if (!c) {
+  if (!client) {
     const i = mem.campaigns.findIndex((x) => x.id === record.id);
     if (i >= 0) mem.campaigns[i] = record; else mem.campaigns.unshift(record);
     return record;
   }
-  await ensureSchema(c);
-  await c.from("call_campaigns").upsert({
+  const assistantConfig = record.assistantConfig as Record<string, unknown>;
+  await client.insert(schema.callCampaigns).values({
     id: record.id, name: record.name, provider: record.provider,
-    assistant_config: record.assistantConfig, audience_filter: record.audienceFilter,
+    assistantConfig, audienceFilter: record.audienceFilter,
     status: record.status, stats: record.stats,
+  }).onConflictDoUpdate({
+    target: schema.callCampaigns.id,
+    set: {
+      name: record.name, provider: record.provider,
+      assistantConfig, audienceFilter: record.audienceFilter,
+      status: record.status, stats: record.stats,
+    },
   });
   return record;
 }
 
 export async function deleteCallCampaign(id: string): Promise<void> {
-  const c = client();
-  if (!c) { mem.campaigns = mem.campaigns.filter((x) => x.id !== id); return; }
-  await ensureSchema(c);
-  await c.from("call_campaigns").delete().eq("id", id);
+  if (!client) { mem.campaigns = mem.campaigns.filter((x) => x.id !== id); return; }
+  await client.delete(schema.callCampaigns).where(eq(schema.callCampaigns.id, id));
 }
 
 /* ─── Logs ───────────────────────────────────────────────── */
 export async function listCallLogs(limit = 100): Promise<CallLog[]> {
-  const c = client();
-  if (!c) return mem.logs.slice(0, limit);
-  await ensureSchema(c);
-  const { data } = await c.from("call_logs").select("*").order("created_at", { ascending: false }).limit(limit);
-  return (data ?? []).map(mapLog);
+  if (!client) return mem.logs.slice(0, limit);
+  const rows = await client.select().from(schema.callLogs).orderBy(desc(schema.callLogs.createdAt)).limit(limit);
+  return rows.map(mapLog);
 }
 
 export async function getCallLog(id: string): Promise<CallLog | null> {
-  const c = client();
-  if (!c) return mem.logs.find((x) => x.id === id) ?? null;
-  await ensureSchema(c);
-  const { data } = await c.from("call_logs").select("*").eq("id", id).limit(1);
-  return data?.[0] ? mapLog(data[0]) : null;
+  if (!client) return mem.logs.find((x) => x.id === id) ?? null;
+  const rows = await client.select().from(schema.callLogs).where(eq(schema.callLogs.id, id)).limit(1);
+  return rows[0] ? mapLog(rows[0]) : null;
 }
 
 export async function getCallLogByProviderId(providerCallId: string): Promise<CallLog | null> {
-  const c = client();
-  if (!c) return mem.logs.find((x) => x.providerCallId === providerCallId) ?? null;
-  await ensureSchema(c);
-  const { data } = await c.from("call_logs").select("*").eq("provider_call_id", providerCallId).limit(1);
-  return data?.[0] ? mapLog(data[0]) : null;
+  if (!client) return mem.logs.find((x) => x.providerCallId === providerCallId) ?? null;
+  const rows = await client.select().from(schema.callLogs).where(eq(schema.callLogs.providerCallId, providerCallId)).limit(1);
+  return rows[0] ? mapLog(rows[0]) : null;
 }
 
 export async function createCallLog(
   p: Omit<CallLog, "id" | "createdAt" | "transcript" | "durationSec" | "costCents" | "status"> &
     Partial<Pick<CallLog, "status" | "transcript" | "durationSec" | "costCents">>
 ): Promise<CallLog> {
-  const c = client();
   const record: CallLog = {
     id: uid(), createdAt: new Date().toISOString(),
     transcript: p.transcript ?? [], durationSec: p.durationSec ?? 0, costCents: p.costCents ?? 0,
@@ -185,36 +136,33 @@ export async function createCallLog(
     recordingUrl: p.recordingUrl ?? null, summary: p.summary ?? null,
     endedReason: p.endedReason ?? null, startedAt: p.startedAt ?? null, endedAt: p.endedAt ?? null,
   };
-  if (!c) { mem.logs.unshift(record); return record; }
-  await ensureSchema(c);
-  await c.from("call_logs").insert({
-    id: record.id, campaign_id: record.campaignId, contact_id: record.contactId,
-    provider: record.provider, provider_call_id: record.providerCallId, to_number: record.toNumber,
-    status: record.status, duration_sec: record.durationSec, cost_cents: record.costCents,
+  if (!client) { mem.logs.unshift(record); return record; }
+  await client.insert(schema.callLogs).values({
+    id: record.id, campaignId: record.campaignId, contactId: record.contactId,
+    provider: record.provider, providerCallId: record.providerCallId, toNumber: record.toNumber,
+    status: record.status, durationSec: record.durationSec, costCents: record.costCents,
   });
   return record;
 }
 
 export async function updateCallLog(id: string, patch: Partial<CallLog>): Promise<void> {
-  const c = client();
-  if (!c) {
+  if (!client) {
     const i = mem.logs.findIndex((x) => x.id === id);
     if (i >= 0) mem.logs[i] = { ...mem.logs[i], ...patch };
     return;
   }
-  await ensureSchema(c);
   const row: Record<string, unknown> = {};
   if (patch.status !== undefined) row.status = patch.status;
-  if (patch.providerCallId !== undefined) row.provider_call_id = patch.providerCallId;
-  if (patch.durationSec !== undefined) row.duration_sec = patch.durationSec;
-  if (patch.costCents !== undefined) row.cost_cents = patch.costCents;
-  if (patch.recordingUrl !== undefined) row.recording_url = patch.recordingUrl;
+  if (patch.providerCallId !== undefined) row.providerCallId = patch.providerCallId;
+  if (patch.durationSec !== undefined) row.durationSec = patch.durationSec;
+  if (patch.costCents !== undefined) row.costCents = patch.costCents;
+  if (patch.recordingUrl !== undefined) row.recordingUrl = patch.recordingUrl;
   if (patch.transcript !== undefined) row.transcript = patch.transcript;
   if (patch.summary !== undefined) row.summary = patch.summary;
-  if (patch.endedReason !== undefined) row.ended_reason = patch.endedReason;
-  if (patch.startedAt !== undefined) row.started_at = patch.startedAt;
-  if (patch.endedAt !== undefined) row.ended_at = patch.endedAt;
-  await c.from("call_logs").update(row).eq("id", id);
+  if (patch.endedReason !== undefined) row.endedReason = patch.endedReason;
+  if (patch.startedAt !== undefined) row.startedAt = patch.startedAt ? new Date(patch.startedAt) : null;
+  if (patch.endedAt !== undefined) row.endedAt = patch.endedAt ? new Date(patch.endedAt) : null;
+  await client.update(schema.callLogs).set(row).where(eq(schema.callLogs.id, id));
 }
 
 export async function bumpCallCampaignStats(
@@ -230,13 +178,12 @@ export async function bumpCallCampaignStats(
   await saveCallCampaign({ ...camp, stats });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapLog(r: any): CallLog {
+function mapLog(r: typeof schema.callLogs.$inferSelect): CallLog {
   return {
-    id: r.id, campaignId: r.campaign_id, contactId: r.contact_id, provider: r.provider,
-    providerCallId: r.provider_call_id, toNumber: r.to_number, status: r.status,
-    durationSec: r.duration_sec ?? 0, costCents: r.cost_cents ?? 0,
-    recordingUrl: r.recording_url, transcript: r.transcript ?? [], summary: r.summary,
-    endedReason: r.ended_reason, startedAt: r.started_at, endedAt: r.ended_at, createdAt: r.created_at,
+    id: r.id, campaignId: r.campaignId, contactId: r.contactId, provider: r.provider as CallLog["provider"],
+    providerCallId: r.providerCallId, toNumber: r.toNumber, status: r.status as CallStatus,
+    durationSec: r.durationSec ?? 0, costCents: r.costCents ?? 0,
+    recordingUrl: r.recordingUrl, transcript: r.transcript ?? [], summary: r.summary,
+    endedReason: r.endedReason, startedAt: iso(r.startedAt), endedAt: iso(r.endedAt), createdAt: iso(r.createdAt)!,
   };
 }

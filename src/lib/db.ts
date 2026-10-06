@@ -1,12 +1,18 @@
 /**
- * Camada de persistência Supabase para o Beely CRM.
+ * Camada de persistência do Beely CRM — fala com o Postgres local via a
+ * API interna /api/data/* (Drizzle server-side, nunca Supabase).
  *
- * Estratégia: Zustand é o cache local (UI reativa), Supabase é o source of truth.
- * Cada mutação no store chama a função correspondente aqui em paralelo.
- * Na inicialização, loadAll() busca tudo do Supabase e hidrata o store.
+ * Estratégia: Zustand é o cache local (UI reativa), Postgres é o source of
+ * truth. Cada mutação no store chama a função correspondente aqui em
+ * paralelo. Na inicialização, loadAll() busca tudo da API e hidrata o store.
+ *
+ * Este arquivo roda NO NAVEGADOR (importado por componentes "use client" e
+ * por store.ts) — por isso fala com /api/data/* via fetch, nunca importa
+ * Drizzle/pg diretamente (não existe driver de Postgres no browser). A
+ * implementação real das queries fica em src/db/queries.ts, chamada pelas
+ * Route Handlers em src/app/api/data/*.
  */
 
-import { supabase } from "@/lib/supabase";
 import type {
   Pipeline, Deal, Contact, Activity, Company,
   Automation, AutomationTrigger, AutomationAction, ScoringRule, ConnectedChannel, SavedIntegration, FinancialConfig, Sdr,
@@ -15,13 +21,12 @@ import type {
 /* ── Helpers de conversão ─────────────────────────────────── */
 
 /**
- * trigger/action de Automation viraram objetos estruturados (motor real de
- * execução). A coluna no banco continua TEXT — grava JSON.stringify e lê de
- * volta com JSON.parse. Automações criadas antes dessa mudança tinham texto
- * livre nessas colunas (ex.: "Novo lead criado"); como não é JSON válido,
- * o parse cai no fallback "legacy" — continuam existindo e visíveis, só não
- * são mais executadas pelo motor (não há como inferir gatilho/ação
- * estruturado de uma frase livre).
+ * trigger/action de Automation são objetos estruturados no store (motor
+ * real de execução), mas a coluna no banco é TEXT — grava JSON.stringify e
+ * lê de volta com JSON.parse. Automações criadas antes dessa mudança tinham
+ * texto livre nessas colunas (ex.: "Novo lead criado"); como não é JSON
+ * válido, o parse cai no fallback "legacy" — continuam existindo e
+ * visíveis, só não são mais executadas pelo motor.
  */
 function parseAutomationTrigger(raw: string): AutomationTrigger {
   try {
@@ -45,25 +50,25 @@ function toDeal(r: any): Deal {
     id:             r.id,
     title:          r.title,
     value:          Number(r.value ?? 0),
-    pipelineId:     r.pipeline_id,
-    stageId:        r.stage_id,
+    pipelineId:     r.pipelineId,
+    stageId:        r.stageId,
     contact:        r.contact ?? "",
-    contactId:      r.contact_id ?? undefined,
+    contactId:      r.contactId ?? undefined,
     owner:          r.owner ?? "",
     tags:           r.tags ?? [],
     status:         r.status ?? "open",
-    lostReason:     r.lost_reason ?? undefined,
+    lostReason:     r.lostReason ?? undefined,
     notes:          r.notes ?? undefined,
     history:        r.history ?? [],
-    createdAt:      r.created_at,
-    stageEnteredAt: r.stage_entered_at ?? undefined,
+    createdAt:      r.createdAt,
+    stageEnteredAt: r.stageEnteredAt ?? undefined,
     // Playbook Comercial Be Fluent v3 — campos aditivos
-    slaRespondedAt:     r.sla_responded_at ?? undefined,
-    costOfInactionNote: r.cost_of_inaction_note ?? undefined,
-    refusalCount:       r.refusal_count ?? undefined,
-    lastActivityAt:     r.last_activity_at ?? undefined,
+    slaRespondedAt:     r.slaRespondedAt ?? undefined,
+    costOfInactionNote: r.costOfInactionNote ?? undefined,
+    refusalCount:       r.refusalCount ?? undefined,
+    lastActivityAt:     r.lastActivityAt ?? undefined,
     bant:              r.bant ?? undefined,
-    sdrId:             r.sdr_id ?? undefined,
+    sdrId:             r.sdrId ?? undefined,
   };
 }
 
@@ -75,7 +80,7 @@ function toContact(r: any): Contact {
     email:               r.email ?? "",
     phone:               r.phone ?? "",
     company:             r.company ?? "",
-    fantasyName:         r.fantasy_name ?? undefined,
+    fantasyName:         r.fantasyName ?? undefined,
     source:              r.source ?? "",
     campaign:            r.campaign ?? undefined,
     funnel:              r.funnel ?? undefined,
@@ -93,64 +98,65 @@ function toContact(r: any): Contact {
     street:              r.street ?? undefined,
     complement:          r.complement ?? undefined,
     number:              r.number ?? undefined,
-    companyCep:          r.company_cep ?? undefined,
-    companyCountry:      r.company_country ?? undefined,
-    companyState:        r.company_state ?? undefined,
-    companyCity:         r.company_city ?? undefined,
-    companyNeighborhood: r.company_neighborhood ?? undefined,
-    companyStreet:       r.company_street ?? undefined,
-    companyComplement:   r.company_complement ?? undefined,
-    companyNumber:       r.company_number ?? undefined,
-    cpfCnpj:             r.cpf_cnpj ?? undefined,
+    companyCep:          r.companyCep ?? undefined,
+    companyCountry:      r.companyCountry ?? undefined,
+    companyState:        r.companyState ?? undefined,
+    companyCity:         r.companyCity ?? undefined,
+    companyNeighborhood: r.companyNeighborhood ?? undefined,
+    companyStreet:       r.companyStreet ?? undefined,
+    companyComplement:   r.companyComplement ?? undefined,
+    companyNumber:       r.companyNumber ?? undefined,
+    cpfCnpj:             r.cpfCnpj ?? undefined,
     product:             r.product ?? undefined,
-    productValue:        r.product_value != null ? Number(r.product_value) : undefined,
-    productDesc:         r.product_desc ?? undefined,
-    metaAdId:            r.meta_ad_id ?? undefined,
-    metaAdName:          r.meta_ad_name ?? undefined,
-    metaAdsetId:         r.meta_adset_id ?? undefined,
-    metaAdsetName:       r.meta_adset_name ?? undefined,
-    metaCampaignId:      r.meta_campaign_id ?? undefined,
-    metaCampaignName:    r.meta_campaign_name ?? undefined,
-    metaFormId:          r.meta_form_id ?? undefined,
-    metaFormName:        r.meta_form_name ?? undefined,
-    metaPageId:          r.meta_page_id ?? undefined,
-    metaPageName:        r.meta_page_name ?? undefined,
-    metaLeadgenId:       r.meta_leadgen_id ?? undefined,
-    metaPlatform:        r.meta_platform ?? undefined,
-    utmUrl:              r.utm_url ?? undefined,
-    utmMedium:           r.utm_medium ?? undefined,
-    utmSource:           r.utm_source ?? undefined,
-    utmCampaign:         r.utm_campaign ?? undefined,
-    utmTerm:             r.utm_term ?? undefined,
-    utmContent:          r.utm_content ?? undefined,
+    productValue:        r.productValue != null ? Number(r.productValue) : undefined,
+    productDesc:         r.productDesc ?? undefined,
+    metaAdId:            r.metaAdId ?? undefined,
+    metaAdName:          r.metaAdName ?? undefined,
+    metaAdsetId:         r.metaAdsetId ?? undefined,
+    metaAdsetName:       r.metaAdsetName ?? undefined,
+    metaCampaignId:      r.metaCampaignId ?? undefined,
+    metaCampaignName:    r.metaCampaignName ?? undefined,
+    metaFormId:          r.metaFormId ?? undefined,
+    metaFormName:        r.metaFormName ?? undefined,
+    metaPageId:          r.metaPageId ?? undefined,
+    metaPageName:        r.metaPageName ?? undefined,
+    metaLeadgenId:       r.metaLeadgenId ?? undefined,
+    metaPlatform:        r.metaPlatform ?? undefined,
+    utmUrl:              r.utmUrl ?? undefined,
+    utmMedium:           r.utmMedium ?? undefined,
+    utmSource:           r.utmSource ?? undefined,
+    utmCampaign:         r.utmCampaign ?? undefined,
+    utmTerm:             r.utmTerm ?? undefined,
+    utmContent:          r.utmContent ?? undefined,
     urgency:             r.urgency ?? undefined,
-    investmentIntent:    r.investment_intent ?? undefined,
-    jobTitle:            r.job_title ?? undefined,
-    monthlyBudget:       r.monthly_budget ?? undefined,
-    contactPreference:   r.contact_preference ?? undefined,
-    mainChallenge:       r.main_challenge ?? undefined,
+    investmentIntent:    r.investmentIntent ?? undefined,
+    jobTitle:            r.jobTitle ?? undefined,
+    monthlyBudget:       r.monthlyBudget ?? undefined,
+    contactPreference:   r.contactPreference ?? undefined,
+    mainChallenge:       r.mainChallenge ?? undefined,
     sector:              r.sector ?? undefined,
-    classFrequency:      r.class_frequency ?? undefined,
-    professionalMoment:  r.professional_moment ?? undefined,
+    classFrequency:      r.classFrequency ?? undefined,
+    professionalMoment:  r.professionalMoment ?? undefined,
     discarded:           r.discarded ?? false,
-    discardReason:       r.discard_reason ?? undefined,
-    discardDesc:         r.discard_desc ?? undefined,
-    firstNote:           r.first_note ?? undefined,
-    firstTask:           r.first_task ?? undefined,
-    registeredAt:        r.registered_at ?? undefined,
-    externalId:          r.external_id ?? undefined,
+    discardReason:       r.discardReason ?? undefined,
+    discardDesc:         r.discardDesc ?? undefined,
+    firstNote:           r.firstNote ?? undefined,
+    firstTask:           r.firstTask ?? undefined,
+    registeredAt:        r.registeredAt ?? undefined,
+    externalId:          r.externalId ?? undefined,
     // Playbook Comercial Be Fluent v3 — qualificação BANT + Avenida do Não
-    bantBudget:          r.bant_budget ?? undefined,
-    bantAuthority:       r.bant_authority ?? undefined,
-    bantNeed:            r.bant_need ?? undefined,
-    bantTiming:          r.bant_timing ?? undefined,
-    bantNote:            r.bant_note ?? undefined,
-    refusalCount:        r.refusal_count ?? undefined,
-    sdrId:               r.sdr_id ?? undefined,
+    bantBudget:          r.bantBudget ?? undefined,
+    bantAuthority:       r.bantAuthority ?? undefined,
+    bantNeed:            r.bantNeed ?? undefined,
+    bantTiming:          r.bantTiming ?? undefined,
+    bantNote:            r.bantNote ?? undefined,
+    refusalCount:        r.refusalCount ?? undefined,
+    sdrId:               r.sdrId ?? undefined,
   };
 }
 
-// camelCase do store → snake_case do banco
+// camelCase do store → shape esperado pela rota (chaves camelCase — o
+// Drizzle já mapeia para snake_case internamente via schema.ts).
 function fromContact(c: Contact) {
   return {
     id:                  c.id,
@@ -158,7 +164,7 @@ function fromContact(c: Contact) {
     email:               c.email || null,
     phone:               c.phone || null,
     company:             c.company || null,
-    fantasy_name:        c.fantasyName ?? null,
+    fantasyName:         c.fantasyName ?? null,
     source:              c.source || null,
     campaign:            c.campaign ?? null,
     funnel:              c.funnel ?? null,
@@ -176,61 +182,61 @@ function fromContact(c: Contact) {
     street:              c.street ?? null,
     complement:          c.complement ?? null,
     number:              c.number ?? null,
-    company_cep:         c.companyCep ?? null,
-    company_country:     c.companyCountry ?? null,
-    company_state:       c.companyState ?? null,
-    company_city:        c.companyCity ?? null,
-    company_neighborhood:c.companyNeighborhood ?? null,
-    company_street:      c.companyStreet ?? null,
-    company_complement:  c.companyComplement ?? null,
-    company_number:      c.companyNumber ?? null,
-    cpf_cnpj:            c.cpfCnpj ?? null,
+    companyCep:          c.companyCep ?? null,
+    companyCountry:      c.companyCountry ?? null,
+    companyState:        c.companyState ?? null,
+    companyCity:         c.companyCity ?? null,
+    companyNeighborhood: c.companyNeighborhood ?? null,
+    companyStreet:       c.companyStreet ?? null,
+    companyComplement:   c.companyComplement ?? null,
+    companyNumber:       c.companyNumber ?? null,
+    cpfCnpj:             c.cpfCnpj ?? null,
     product:             c.product ?? null,
-    product_value:       c.productValue ?? null,
-    product_desc:        c.productDesc ?? null,
-    meta_ad_id:          c.metaAdId ?? null,
-    meta_ad_name:        c.metaAdName ?? null,
-    meta_adset_id:       c.metaAdsetId ?? null,
-    meta_adset_name:     c.metaAdsetName ?? null,
-    meta_campaign_id:    c.metaCampaignId ?? null,
-    meta_campaign_name:  c.metaCampaignName ?? null,
-    meta_form_id:        c.metaFormId ?? null,
-    meta_form_name:      c.metaFormName ?? null,
-    meta_page_id:        c.metaPageId ?? null,
-    meta_page_name:      c.metaPageName ?? null,
-    meta_leadgen_id:     c.metaLeadgenId ?? null,
-    meta_platform:       c.metaPlatform ?? null,
-    utm_url:             c.utmUrl ?? null,
-    utm_medium:          c.utmMedium ?? null,
-    utm_source:          c.utmSource ?? null,
-    utm_campaign:        c.utmCampaign ?? null,
-    utm_term:            c.utmTerm ?? null,
-    utm_content:         c.utmContent ?? null,
+    productValue:        c.productValue != null ? String(c.productValue) : null,
+    productDesc:         c.productDesc ?? null,
+    metaAdId:            c.metaAdId ?? null,
+    metaAdName:          c.metaAdName ?? null,
+    metaAdsetId:         c.metaAdsetId ?? null,
+    metaAdsetName:       c.metaAdsetName ?? null,
+    metaCampaignId:      c.metaCampaignId ?? null,
+    metaCampaignName:    c.metaCampaignName ?? null,
+    metaFormId:          c.metaFormId ?? null,
+    metaFormName:        c.metaFormName ?? null,
+    metaPageId:          c.metaPageId ?? null,
+    metaPageName:        c.metaPageName ?? null,
+    metaLeadgenId:       c.metaLeadgenId ?? null,
+    metaPlatform:        c.metaPlatform ?? null,
+    utmUrl:              c.utmUrl ?? null,
+    utmMedium:           c.utmMedium ?? null,
+    utmSource:           c.utmSource ?? null,
+    utmCampaign:         c.utmCampaign ?? null,
+    utmTerm:             c.utmTerm ?? null,
+    utmContent:          c.utmContent ?? null,
     urgency:             c.urgency ?? null,
-    investment_intent:   c.investmentIntent ?? null,
-    job_title:           c.jobTitle ?? null,
-    monthly_budget:      c.monthlyBudget ?? null,
-    contact_preference:  c.contactPreference ?? null,
-    main_challenge:      c.mainChallenge ?? null,
+    investmentIntent:    c.investmentIntent ?? null,
+    jobTitle:            c.jobTitle ?? null,
+    monthlyBudget:       c.monthlyBudget ?? null,
+    contactPreference:   c.contactPreference ?? null,
+    mainChallenge:       c.mainChallenge ?? null,
     sector:              c.sector ?? null,
-    class_frequency:     c.classFrequency ?? null,
-    professional_moment: c.professionalMoment ?? null,
+    classFrequency:      c.classFrequency ?? null,
+    professionalMoment:  c.professionalMoment ?? null,
     discarded:           c.discarded ?? false,
-    discard_reason:      c.discardReason ?? null,
-    discard_desc:        c.discardDesc ?? null,
-    first_note:          c.firstNote ?? null,
-    first_task:          c.firstTask ?? null,
-    registered_at:       c.registeredAt ?? null,
-    external_id:         c.externalId ?? null,
+    discardReason:       c.discardReason ?? null,
+    discardDesc:         c.discardDesc ?? null,
+    firstNote:           c.firstNote ?? null,
+    firstTask:           c.firstTask ?? null,
+    registeredAt:        c.registeredAt ?? null,
+    externalId:          c.externalId ?? null,
     // Playbook Comercial Be Fluent v3
-    bant_budget:         c.bantBudget ?? null,
-    bant_authority:      c.bantAuthority ?? null,
-    bant_need:           c.bantNeed ?? null,
-    bant_timing:         c.bantTiming ?? null,
-    bant_note:           c.bantNote ?? null,
-    refusal_count:       c.refusalCount ?? 0,
-    sdr_id:              c.sdrId ?? null,
-    updated_at:          new Date().toISOString(),
+    bantBudget:          c.bantBudget ?? null,
+    bantAuthority:       c.bantAuthority ?? null,
+    bantNeed:            c.bantNeed ?? null,
+    bantTiming:          c.bantTiming ?? null,
+    bantNote:            c.bantNote ?? null,
+    refusalCount:        c.refusalCount ?? 0,
+    sdrId:               c.sdrId ?? null,
+    updatedAt:           new Date().toISOString(),
   };
 }
 
@@ -238,27 +244,27 @@ function fromDeal(d: Deal) {
   return {
     id:              d.id,
     title:           d.title,
-    value:           d.value,
-    pipeline_id:     d.pipelineId,
-    stage_id:        d.stageId,
+    value:           String(d.value),
+    pipelineId:      d.pipelineId,
+    stageId:         d.stageId,
     contact:         d.contact || null,
-    contact_id:      d.contactId ?? null,
+    contactId:       d.contactId ?? null,
     owner:           d.owner || null,
     tags:            d.tags ?? [],
     status:          d.status,
-    lost_reason:     d.lostReason ?? null,
+    lostReason:      d.lostReason ?? null,
     notes:           d.notes ?? null,
     history:         d.history ?? [],
-    stage_entered_at:d.stageEnteredAt ?? null,
-    created_at:      d.createdAt,
-    updated_at:      new Date().toISOString(),
+    stageEnteredAt:  d.stageEnteredAt ?? null,
+    createdAt:       d.createdAt,
+    updatedAt:       new Date().toISOString(),
     // Playbook Comercial Be Fluent v3 — campos aditivos
-    sla_responded_at:      d.slaRespondedAt ?? null,
-    cost_of_inaction_note: d.costOfInactionNote ?? null,
-    refusal_count:         d.refusalCount ?? 0,
-    last_activity_at:      d.lastActivityAt ?? null,
-    bant:                  d.bant ?? null,
-    sdr_id:                d.sdrId ?? null,
+    slaRespondedAt:      d.slaRespondedAt ?? null,
+    costOfInactionNote:  d.costOfInactionNote ?? null,
+    refusalCount:        d.refusalCount ?? 0,
+    lastActivityAt:      d.lastActivityAt ?? null,
+    bant:                d.bant ?? null,
+    sdrId:               d.sdrId ?? null,
   };
 }
 
@@ -269,27 +275,27 @@ function toActivity(r: any): Activity {
     type:    r.type,
     title:   r.title,
     due:     r.due ?? "",
-    dueDate: r.due_date ?? undefined,
-    dueTime: r.due_time ?? undefined,
+    dueDate: r.dueDate ?? undefined,
+    dueTime: r.dueTime ?? undefined,
     contact: r.contact ?? "",
     done:    r.done ?? false,
-    dealId:  r.deal_id ?? undefined,
+    dealId:  r.dealId ?? undefined,
     notes:   r.notes ?? undefined,
   };
 }
 
 function fromActivity(a: Activity) {
   return {
-    id:       a.id,
-    type:     a.type,
-    title:    a.title,
-    due:      a.due || null,
-    due_date: a.dueDate ?? null,
-    due_time: a.dueTime ?? null,
-    contact:  a.contact || null,
-    done:     a.done,
-    deal_id:  a.dealId ?? null,
-    notes:    a.notes ?? null,
+    id:      a.id,
+    type:    a.type,
+    title:   a.title,
+    due:     a.due || null,
+    dueDate: a.dueDate ?? null,
+    dueTime: a.dueTime ?? null,
+    contact: a.contact || null,
+    done:    a.done,
+    dealId:  a.dealId ?? null,
+    notes:   a.notes ?? null,
   };
 }
 
@@ -314,43 +320,24 @@ function toSdr(r: any): Sdr {
   // Nunca devolve o valor real de token/access token/verify token ao
   // navegador — loadAll() roda no client. Só os booleanos has* indicam que
   // existe uma credencial salva; o valor de verdade só existe server-side
-  // (webhooks, /api/inbox/send, /api/sdrs) usando a service role key.
+  // (webhooks, /api/inbox/send, /api/sdrs) usando o Postgres direto.
   return {
     id:                 r.id,
     name:               r.name,
     email:              r.email ?? undefined,
-    avatarColor:        r.avatar_color ?? undefined,
+    avatarColor:        r.avatarColor ?? undefined,
     active:             r.active ?? true,
-    waProvider:         r.wa_provider ?? undefined,
-    zapiInstanceId:     r.zapi_instance_id ?? undefined,
-    hasZapiToken:       !!r.zapi_token,
-    hasZapiClientToken: !!r.zapi_client_token,
-    metaPhoneNumberId:  r.meta_phone_number_id ?? undefined,
-    hasMetaAccessToken: !!r.meta_access_token,
-    metaWabaId:         r.meta_waba_id ?? undefined,
-    hasMetaVerifyToken: !!r.meta_verify_token,
-    phoneDisplay:       r.phone_display ?? undefined,
-    createdAt:          r.created_at,
-  };
-}
-
-function fromSdr(s: Sdr) {
-  return {
-    id:                     s.id,
-    name:                   s.name,
-    email:                  s.email ?? null,
-    avatar_color:           s.avatarColor ?? null,
-    active:                 s.active ?? true,
-    wa_provider:            s.waProvider ?? null,
-    zapi_instance_id:       s.zapiInstanceId ?? null,
-    zapi_token:             s.zapiToken ?? null,
-    zapi_client_token:      s.zapiClientToken ?? null,
-    meta_phone_number_id:   s.metaPhoneNumberId ?? null,
-    meta_access_token:      s.metaAccessToken ?? null,
-    meta_waba_id:           s.metaWabaId ?? null,
-    meta_verify_token:      s.metaVerifyToken ?? null,
-    phone_display:          s.phoneDisplay ?? null,
-    created_at:             s.createdAt,
+    waProvider:         r.waProvider ?? undefined,
+    zapiInstanceId:     r.zapiInstanceId ?? undefined,
+    hasZapiToken:       !!r.zapiToken,
+    hasZapiClientToken: !!r.zapiClientToken,
+    metaPhoneNumberId:  r.metaPhoneNumberId ?? undefined,
+    hasMetaAccessToken: !!r.metaAccessToken,
+    metaWabaId:         r.metaWabaId ?? undefined,
+    hasMetaVerifyToken: !!r.metaVerifyToken,
+    hasWebhookSecret:   !!r.webhookSecret,
+    phoneDisplay:       r.phoneDisplay ?? undefined,
+    createdAt:          r.createdAt,
   };
 }
 
@@ -374,14 +361,14 @@ const DEFAULT_FINANCIAL: FinancialConfig = {
 };
 
 /**
- * Une uma lista local com a versão vinda do Supabase por id, SEM nunca
+ * Une uma lista local com a versão vinda do banco por id, SEM nunca
  * descartar um registro que só existe localmente — essencial para um
  * refresh (periódico, manual, ou de visibilidade da aba) não apagar dados
- * recém-criados (ex.: leads importados em lote) cujo upsert no Supabase
- * ainda está em voo quando o refresh dispara. O snapshot remoto vence
- * quando o id já existe dos dois lados (é o source of truth para edições),
- * mas nunca remove um item local-only — só uma exclusão explícita
- * (delete*) tira algo da lista.
+ * recém-criados (ex.: leads importados em lote) cujo upsert ainda está em
+ * voo quando o refresh dispara. O snapshot remoto vence quando o id já
+ * existe dos dois lados (é o source of truth para edições), mas nunca
+ * remove um item local-only — só uma exclusão explícita (delete*) tira algo
+ * da lista.
  */
 export function mergeById<T extends { id: string }>(local: T[], remote: T[]): T[] {
   const remoteIds = new Set(remote.map((r) => r.id));
@@ -391,89 +378,65 @@ export function mergeById<T extends { id: string }>(local: T[], remote: T[]): T[
 
 export async function loadAll(): Promise<DbSnapshot | null> {
   try {
-    const [
-      { data: pipelines },
-      { data: deals },
-      { data: contacts },
-      { data: activities },
-      { data: companies },
-      { data: automations },
-      { data: scoringRules },
-      { data: channels },
-      { data: integrations },
-      { data: financial },
-      { data: sdrs },
-    ] = await Promise.all([
-      supabase.from("pipelines").select("*").order("created_at"),
-      supabase.from("deals").select("*").order("created_at"),
-      supabase.from("contacts").select("*").order("created_at", { ascending: false }),
-      supabase.from("activities").select("*").order("created_at", { ascending: false }),
-      supabase.from("companies").select("*").order("created_at"),
-      supabase.from("automations").select("*").order("created_at"),
-      supabase.from("scoring_rules").select("*").order("created_at"),
-      supabase.from("connected_channels").select("*"),
-      supabase.from("integrations").select("*"),
-      supabase.from("financial_config").select("*").eq("id", "default").single(),
-      supabase.from("sdrs").select("*").order("created_at").then((r) => r, () => ({ data: [] })),
-    ]);
-
-    // Se não há pipelines, banco está vazio — retorna null para usar seed local
-    if (!pipelines || pipelines.length === 0) return null;
+    const res = await fetch("/api/data");
+    const data = await res.json();
+    if (!data.ok) return null;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const integrationsMap: Record<string, SavedIntegration> = {};
-    for (const row of integrations ?? []) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const row of data.integrations ?? []) {
       integrationsMap[row.id] = {
         id:           row.id,
-        connectedAt:  row.connected_at,
+        connectedAt:  row.connectedAt,
         credentials:  row.credentials ?? {},
       };
     }
 
     return {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      pipelines: (pipelines ?? []).map((r: any) => ({
+      pipelines: (data.pipelines ?? []).map((r: any) => ({
         id:     r.id,
         name:   r.name,
         stages: r.stages ?? [],
       })),
-      deals:             (deals ?? []).map(toDeal),
-      contacts:          (contacts ?? []).map(toContact),
-      activities:        (activities ?? []).map(toActivity),
+      deals:             (data.deals ?? []).map(toDeal),
+      contacts:          (data.contacts ?? []).map(toContact),
+      activities:        (data.activities ?? []).map(toActivity),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      companies:         (companies ?? []).map((r: any) => ({
+      companies:         (data.companies ?? []).map((r: any) => ({
         id: r.id, name: r.name, domain: r.domain ?? undefined,
         phone: r.phone ?? undefined, segment: r.segment ?? undefined,
         notes: r.notes ?? undefined, owner: r.owner ?? "",
       })),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      automations:       (automations ?? []).map((r: any) => ({
+      automations:       (data.automations ?? []).map((r: any) => ({
         id: r.id, name: r.name,
         trigger: parseAutomationTrigger(r.trigger ?? ""),
         action: parseAutomationAction(r.action ?? ""),
         active: r.active ?? true,
       })),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      scoringRules:      (scoringRules ?? []).map((r: any) => ({
+      scoringRules:      (data.scoringRules ?? []).map((r: any) => ({
         id: r.id, label: r.label, points: r.points ?? 0,
       })),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      connectedChannels: (channels ?? []).map((r: any) => ({
+      connectedChannels: (data.connectedChannels ?? []).map((r: any) => ({
         type: r.type, provider: r.provider ?? "",
-        connectedAt: r.connected_at, credentials: r.credentials ?? {},
+        connectedAt: r.connectedAt, credentials: r.credentials ?? {},
       })),
       integrations: integrationsMap,
-      financialConfig: financial ? {
-        monthlyMarketingSpend: Number(financial.monthly_marketing_spend ?? 0),
-        avgContractMonths:     Number(financial.avg_contract_months ?? 12),
-        monthlyChurnRate:      Number(financial.monthly_churn_rate ?? 5),
-        avgCostPerStudent:     Number(financial.avg_cost_per_student ?? 0),
-        revenueGoalMonthly:    Number(financial.revenue_goal_monthly ?? 0),
-        leadsPerMonth:         Number(financial.leads_per_month ?? 0),
-        slaTargetMinutes:      Number(financial.sla_target_minutes ?? 4),
-        dailyTargets:          { ...DEFAULT_DAILY_TARGETS, ...(financial.daily_targets ?? {}) },
+      financialConfig: data.financialConfig ? {
+        monthlyMarketingSpend: Number(data.financialConfig.monthlyMarketingSpend ?? 0),
+        avgContractMonths:     Number(data.financialConfig.avgContractMonths ?? 12),
+        monthlyChurnRate:      Number(data.financialConfig.monthlyChurnRate ?? 5),
+        avgCostPerStudent:     Number(data.financialConfig.avgCostPerStudent ?? 0),
+        revenueGoalMonthly:    Number(data.financialConfig.revenueGoalMonthly ?? 0),
+        leadsPerMonth:         Number(data.financialConfig.leadsPerMonth ?? 0),
+        slaTargetMinutes:      Number(data.financialConfig.slaTargetMinutes ?? 4),
+        dailyTargets:          { ...DEFAULT_DAILY_TARGETS, ...(data.financialConfig.dailyTargets ?? {}) },
       } : DEFAULT_FINANCIAL,
-      sdrs: (sdrs ?? []).map(toSdr),
+      sdrs: (data.sdrs ?? []).map(toSdr),
     };
   } catch (e) {
     console.error("[db] loadAll falhou:", e);
@@ -481,187 +444,117 @@ export async function loadAll(): Promise<DbSnapshot | null> {
   }
 }
 
-/* ── Seed inicial (primeira vez) ──────────────────────────── */
-
-export async function seedSupabase(snapshot: DbSnapshot): Promise<void> {
-  try {
-    await Promise.all([
-      supabase.from("pipelines").upsert(
-        snapshot.pipelines.map((p) => ({ id: p.id, name: p.name, stages: p.stages }))
-      ),
-      supabase.from("contacts").upsert(snapshot.contacts.map(fromContact)),
-      supabase.from("deals").upsert(snapshot.deals.map(fromDeal)),
-      supabase.from("activities").upsert(snapshot.activities.map(fromActivity)),
-      supabase.from("companies").upsert(
-        snapshot.companies.map((c) => ({ id: c.id, name: c.name, domain: c.domain ?? null, phone: c.phone ?? null, segment: c.segment ?? null, notes: c.notes ?? null, owner: c.owner }))
-      ),
-      supabase.from("automations").upsert(
-        snapshot.automations.map((a) => ({ id: a.id, name: a.name, trigger: JSON.stringify(a.trigger), action: JSON.stringify(a.action), active: a.active }))
-      ),
-      supabase.from("scoring_rules").upsert(
-        snapshot.scoringRules.map((r) => ({ id: r.id, label: r.label, points: r.points }))
-      ),
-      supabase.from("financial_config").upsert({
-        id:                       "default",
-        monthly_marketing_spend:  snapshot.financialConfig.monthlyMarketingSpend,
-        avg_contract_months:      snapshot.financialConfig.avgContractMonths,
-        monthly_churn_rate:       snapshot.financialConfig.monthlyChurnRate,
-        avg_cost_per_student:     snapshot.financialConfig.avgCostPerStudent,
-        revenue_goal_monthly:     snapshot.financialConfig.revenueGoalMonthly,
-        leads_per_month:          snapshot.financialConfig.leadsPerMonth,
-        sla_target_minutes:       snapshot.financialConfig.slaTargetMinutes,
-        daily_targets:            snapshot.financialConfig.dailyTargets,
-        updated_at:               new Date().toISOString(),
-      }),
-    ]);
-    console.log("[db] seed inicial concluído");
-  } catch (e) {
-    console.error("[db] seedSupabase falhou:", e);
-  }
-}
-
 /* ── Mutações individuais ─────────────────────────────────── */
 
 /**
- * Loga qualquer erro do Supabase em vez de engolir silenciosamente — sem
- * isso, uma escrita bloqueada (RLS sem policy, coluna faltando, etc.)
- * nunca aparecia em lugar nenhum: o dado "sumia" (voltava a não existir no
- * banco) sem nenhum rastro no console. Foi assim que o bug do SDR não
- * persistir passou despercebido; aplicado aqui para toda mutação do CRM.
+ * Loga qualquer erro de persistência em vez de engolir silenciosamente —
+ * sem isso, uma escrita bloqueada (coluna faltando, conexão caída, etc.)
+ * nunca aparecia em lugar nenhum: o dado "sumia" sem nenhum rastro no
+ * console. Foi assim que o bug do SDR não persistir passou despercebido;
+ * aplicado aqui para toda mutação do CRM.
  */
-function logErr(table: string, op: "upsert" | "delete", error: { message: string } | null) {
-  if (error) console.error(`[db] ${op} em "${table}" falhou:`, error.message);
+async function postEntity(entity: string, body: unknown) {
+  try {
+    const res = await fetch(`/api/data/${entity}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      console.error(`[db] upsert em "${entity}" falhou:`, data.error ?? res.statusText);
+    }
+  } catch (e) {
+    console.error(`[db] upsert em "${entity}" falhou (rede):`, e);
+  }
 }
 
-// Pipelines
+async function deleteEntity(entity: string, id: string, param = "id") {
+  try {
+    const res = await fetch(`/api/data/${entity}?${param}=${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      console.error(`[db] delete em "${entity}" falhou:`, data.error ?? res.statusText);
+    }
+  } catch (e) {
+    console.error(`[db] delete em "${entity}" falhou (rede):`, e);
+  }
+}
+
 export const db = {
   // ── Pipelines ──────────────────────────────────────────────
-  upsertPipeline: async (p: Pipeline) => {
-    const { error } = await supabase.from("pipelines").upsert({ id: p.id, name: p.name, stages: p.stages });
-    logErr("pipelines", "upsert", error);
-  },
-  deletePipeline: async (id: string) => {
-    const { error } = await supabase.from("pipelines").delete().eq("id", id);
-    logErr("pipelines", "delete", error);
-  },
+  upsertPipeline: async (p: Pipeline) => postEntity("pipelines", { id: p.id, name: p.name, stages: p.stages }),
+  deletePipeline: async (id: string) => deleteEntity("pipelines", id),
 
   // ── Deals ──────────────────────────────────────────────────
-  upsertDeal: async (d: Deal) => {
-    const { error } = await supabase.from("deals").upsert(fromDeal(d));
-    logErr("deals", "upsert", error);
-  },
-  deleteDeal: async (id: string) => {
-    const { error } = await supabase.from("deals").delete().eq("id", id);
-    logErr("deals", "delete", error);
-  },
+  upsertDeal: async (d: Deal) => postEntity("deals", fromDeal(d)),
+  deleteDeal: async (id: string) => deleteEntity("deals", id),
 
   // ── Contacts ───────────────────────────────────────────────
-  upsertContact: async (c: Contact) => {
-    const { error } = await supabase.from("contacts").upsert(fromContact(c));
-    logErr("contacts", "upsert", error);
-  },
+  upsertContact: async (c: Contact) => postEntity("contacts", fromContact(c)),
   upsertContacts: async (cs: Contact[]) => {
     if (cs.length === 0) return;
-    // Lote de 200 para evitar timeout
-    for (let i = 0; i < cs.length; i += 200) {
-      const { error } = await supabase.from("contacts").upsert(cs.slice(i, i + 200).map(fromContact));
-      logErr("contacts", "upsert", error);
-    }
+    await postEntity("contacts", cs.map(fromContact));
   },
-  deleteContact: async (id: string) => {
-    const { error } = await supabase.from("contacts").delete().eq("id", id);
-    logErr("contacts", "delete", error);
-  },
+  deleteContact: async (id: string) => deleteEntity("contacts", id),
 
   // ── Activities ─────────────────────────────────────────────
-  upsertActivity: async (a: Activity) => {
-    const { error } = await supabase.from("activities").upsert(fromActivity(a));
-    logErr("activities", "upsert", error);
-  },
-  deleteActivity: async (id: string) => {
-    const { error } = await supabase.from("activities").delete().eq("id", id);
-    logErr("activities", "delete", error);
-  },
+  upsertActivity: async (a: Activity) => postEntity("activities", fromActivity(a)),
+  deleteActivity: async (id: string) => deleteEntity("activities", id),
 
   // ── Companies ──────────────────────────────────────────────
-  upsertCompany: async (c: Company) => {
-    const { error } = await supabase.from("companies").upsert({ id: c.id, name: c.name, domain: c.domain ?? null, phone: c.phone ?? null, segment: c.segment ?? null, notes: c.notes ?? null, owner: c.owner });
-    logErr("companies", "upsert", error);
-  },
-  deleteCompany: async (id: string) => {
-    const { error } = await supabase.from("companies").delete().eq("id", id);
-    logErr("companies", "delete", error);
-  },
+  upsertCompany: async (c: Company) => postEntity("companies", {
+    id: c.id, name: c.name, domain: c.domain ?? null, phone: c.phone ?? null,
+    segment: c.segment ?? null, notes: c.notes ?? null, owner: c.owner,
+  }),
+  deleteCompany: async (id: string) => deleteEntity("companies", id),
 
   // ── Automations ────────────────────────────────────────────
-  upsertAutomation: async (a: Automation) => {
-    const { error } = await supabase.from("automations").upsert({
-      id: a.id, name: a.name, trigger: JSON.stringify(a.trigger), action: JSON.stringify(a.action), active: a.active,
-    });
-    logErr("automations", "upsert", error);
-  },
-  deleteAutomation: async (id: string) => {
-    const { error } = await supabase.from("automations").delete().eq("id", id);
-    logErr("automations", "delete", error);
-  },
+  upsertAutomation: async (a: Automation) => postEntity("automations", {
+    id: a.id, name: a.name, trigger: JSON.stringify(a.trigger), action: JSON.stringify(a.action), active: a.active,
+  }),
+  deleteAutomation: async (id: string) => deleteEntity("automations", id),
 
   // ── Scoring Rules ──────────────────────────────────────────
-  upsertScoringRule: async (r: ScoringRule) => {
-    const { error } = await supabase.from("scoring_rules").upsert({ id: r.id, label: r.label, points: r.points });
-    logErr("scoring_rules", "upsert", error);
-  },
-  deleteScoringRule: async (id: string) => {
-    const { error } = await supabase.from("scoring_rules").delete().eq("id", id);
-    logErr("scoring_rules", "delete", error);
-  },
+  upsertScoringRule: async (r: ScoringRule) => postEntity("scoring-rules", { id: r.id, label: r.label, points: r.points }),
+  deleteScoringRule: async (id: string) => deleteEntity("scoring-rules", id),
 
   // ── Connected Channels ─────────────────────────────────────
-  upsertChannel: async (ch: ConnectedChannel) => {
-    const { error } = await supabase.from("connected_channels").upsert({ type: ch.type, provider: ch.provider, credentials: ch.credentials, connected_at: ch.connectedAt });
-    logErr("connected_channels", "upsert", error);
-  },
-  deleteChannel: async (type: string) => {
-    const { error } = await supabase.from("connected_channels").delete().eq("type", type);
-    logErr("connected_channels", "delete", error);
-  },
+  upsertChannel: async (ch: ConnectedChannel) => postEntity("connected-channels", {
+    type: ch.type, provider: ch.provider, credentials: ch.credentials, connectedAt: ch.connectedAt,
+  }),
+  deleteChannel: async (type: string) => deleteEntity("connected-channels", type, "type"),
 
   // ── Integrations ───────────────────────────────────────────
-  upsertIntegration: async (id: string, data: SavedIntegration) => {
-    const { error } = await supabase.from("integrations").upsert({ id, credentials: data.credentials, connected_at: data.connectedAt });
-    logErr("integrations", "upsert", error);
-  },
-  deleteIntegration: async (id: string) => {
-    const { error } = await supabase.from("integrations").delete().eq("id", id);
-    logErr("integrations", "delete", error);
-  },
+  upsertIntegration: async (id: string, data: SavedIntegration) => postEntity("integrations", {
+    id, credentials: data.credentials, connectedAt: data.connectedAt,
+  }),
+  deleteIntegration: async (id: string) => deleteEntity("integrations", id),
 
   // ── Financial Config ───────────────────────────────────────
-  upsertFinancialConfig: async (fc: FinancialConfig) => {
-    const { error } = await supabase.from("financial_config").upsert({
-      id:                      "default",
-      monthly_marketing_spend: fc.monthlyMarketingSpend,
-      avg_contract_months:     fc.avgContractMonths,
-      monthly_churn_rate:      fc.monthlyChurnRate,
-      avg_cost_per_student:    fc.avgCostPerStudent,
-      revenue_goal_monthly:    fc.revenueGoalMonthly,
-      leads_per_month:         fc.leadsPerMonth,
-      sla_target_minutes:      fc.slaTargetMinutes,
-      daily_targets:           fc.dailyTargets,
-      updated_at:              new Date().toISOString(),
-    });
-    logErr("financial_config", "upsert", error);
-  },
+  upsertFinancialConfig: async (fc: FinancialConfig) => postEntity("financial-config", {
+    id: "default",
+    monthlyMarketingSpend: fc.monthlyMarketingSpend,
+    avgContractMonths:     fc.avgContractMonths,
+    monthlyChurnRate:      fc.monthlyChurnRate,
+    avgCostPerStudent:     fc.avgCostPerStudent,
+    revenueGoalMonthly:    fc.revenueGoalMonthly,
+    leadsPerMonth:         fc.leadsPerMonth,
+    slaTargetMinutes:      fc.slaTargetMinutes,
+    dailyTargets:          fc.dailyTargets,
+    updatedAt:             new Date().toISOString(),
+  }),
 
   // ── SDRs (WhatsApp Business por atendente) ──────────────────
-  upsertSdr: async (s: Sdr) => {
-    const { error } = await supabase.from("sdrs").upsert(fromSdr(s));
-    if (error) {
-      // Este era o ponto cego que fazia SDRs "salvos" nunca chegarem ao banco:
-      // o webhook então não os encontrava e descartava mensagens sem rastro.
-      console.error("[db] upsertSdr falhou — SDR NÃO foi persistido no Supabase:", error.message);
-    }
-  },
-  deleteSdr: async (id: string) => {
-    await supabase.from("sdrs").delete().eq("id", id);
-  },
+  // Mantido por compatibilidade — SDRs já tinham migrado para /api/sdrs
+  // numa correção de segurança anterior (nunca envia credencial real pelo
+  // navegador); este caminho não é mais chamado por addSdr/updateSdr no
+  // store, mas fica disponível caso algo ainda dependa dele.
+  upsertSdr: async (s: Sdr) => postEntity("sdrs", {
+    id: s.id, name: s.name, email: s.email ?? null, avatarColor: s.avatarColor ?? null,
+    active: s.active ?? true, waProvider: s.waProvider ?? null,
+    zapiInstanceId: s.zapiInstanceId ?? null, phoneDisplay: s.phoneDisplay ?? null,
+    createdAt: s.createdAt,
+  }),
+  deleteSdr: async (id: string) => deleteEntity("sdrs", id),
 };

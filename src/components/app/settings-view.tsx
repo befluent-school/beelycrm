@@ -1120,13 +1120,12 @@ function StageBenchmarkEditor() {
   );
 }
 
-/* ── Diagnóstico de persistência Supabase + limpeza de conversas órfãs ── */
+/* ── Diagnóstico de persistência no Postgres + limpeza de conversas órfãs ── */
 interface SupabaseStatus {
   ok: boolean;
   reason?: string;
-  execSql: { available: boolean; error?: string };
+  connection: { available: boolean; error?: string };
   tables: Record<string, { exists: boolean; count?: number; error?: string }>;
-  anonWrite?: { ok: boolean; error?: string; hint?: string };
 }
 
 function SupabaseDiagnosticsCard() {
@@ -1166,7 +1165,7 @@ function SupabaseDiagnosticsCard() {
       <CardHeader>
         <CardTitle className="text-sm">Diagnóstico de conexão com o banco</CardTitle>
         <CardDescription>
-          Verifica se o Supabase está gravando de verdade (SDRs, mensagens do WhatsApp, negócios).
+          Verifica se o Postgres está gravando de verdade (SDRs, mensagens do WhatsApp, negócios).
           Se algo falhar aqui, é a causa raiz de integrações que “não chegam” no sistema.
         </CardDescription>
       </CardHeader>
@@ -1189,9 +1188,9 @@ function SupabaseDiagnosticsCard() {
             </div>
             {status.reason && <p className="text-destructive">{status.reason}</p>}
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Função exec_sql (auto-schema)</span>
-              <span className={status.execSql.available ? "text-green-400" : "text-destructive"}>
-                {status.execSql.available ? "disponível" : status.execSql.error ?? "indisponível"}
+              <span className="text-muted-foreground">Conexão com o Postgres</span>
+              <span className={status.connection?.available ? "text-green-400" : "text-destructive"}>
+                {status.connection?.available ? "disponível" : status.connection?.error ?? "indisponível"}
               </span>
             </div>
             {Object.entries(status.tables ?? {}).map(([table, info]) => (
@@ -1202,27 +1201,10 @@ function SupabaseDiagnosticsCard() {
                 </span>
               </div>
             ))}
-            {status.anonWrite && (
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Escrita do navegador (anon key) na tabela sdrs</span>
-                <span className={status.anonWrite.ok ? "text-green-400" : "text-destructive"}>
-                  {status.anonWrite.ok ? "OK" : status.anonWrite.error ?? "bloqueada"}
-                </span>
-              </div>
-            )}
-            {!status.execSql.available && (
+            {!status.connection?.available && (
               <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-amber-200">
-                A função <code className="rounded bg-white/10 px-1">exec_sql</code> não existe no seu banco — isso faz o
-                app falhar silenciosamente ao salvar SDRs/tabelas novas. Rode o arquivo{" "}
-                <code className="rounded bg-white/10 px-1">supabase-setup.sql</code> (na raiz do projeto) uma vez no
-                SQL Editor do Supabase.
-              </p>
-            )}
-            {status.anonWrite && !status.anonWrite.ok && (
-              <p className="mt-2 rounded-md border border-red-500/30 bg-red-500/10 p-2 text-red-200">
-                {status.anonWrite.hint ?? "A escrita do navegador na tabela sdrs está bloqueada — é essa a causa do SDR \"sumir\" ao salvar."}
-                {" "}Rode <code className="rounded bg-white/10 px-1">supabase-setup.sql</code> de novo no SQL Editor
-                (a seção 7 foi adicionada — cole o arquivo inteiro atualizado).
+                O servidor não conseguiu conectar no Postgres. Confirme a variável{" "}
+                <code className="rounded bg-white/10 px-1">DATABASE_URL</code> no ambiente e se o banco está no ar.
               </p>
             )}
           </div>

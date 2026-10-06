@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Plus, Zap, ArrowRight, Webhook, Trash2, Pencil, X, TrendingUp, TrendingDown, Star, Clock, MessageCircle, Mail, MousePointer, UserCheck, Save, Loader2, Repeat, CalendarClock, BookOpen, Phone, Copy, ShieldQuestion, Handshake, Flame as FlameIcon, Megaphone } from "lucide-react";
 import { useStore, useHydrated, type Automation, type AutomationTrigger, type AutomationAction } from "@/lib/store";
 import { SITUATION_LABELS, type FollowupSituation } from "@/lib/followup-playbook-labels";
-import { SCRIPT_CATEGORY_LABELS, type Script, type ScriptCategory } from "@/lib/scripts-store";
+import { SCRIPT_CATEGORY_LABELS, type Script, type ScriptCategory } from "@/lib/scripts-labels";
 import { cn } from "@/lib/utils";
 
 

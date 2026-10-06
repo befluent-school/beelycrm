@@ -8,11 +8,12 @@
  * - Se o lead responder a qualquer momento, volta para "Qualificação"
  *   (a resposta é detectada via inbox_messages, fora deste módulo).
  *
- * Persistido no Supabase (não no zustand) porque o disparo roda em
- * cron server-side, sem acesso ao localStorage do navegador.
+ * Persistido no Postgres (não no zustand) porque o disparo roda em cron
+ * server-side, sem acesso ao localStorage do navegador.
  */
 
-import { createClient } from "@supabase/supabase-js";
+import { asc } from "drizzle-orm";
+import { db as client, schema } from "@/db";
 
 export interface FollowupTemplate {
   step: 1 | 2 | 3 | 4 | 5;
@@ -50,79 +51,46 @@ const DEFAULT_TEMPLATES: Omit<FollowupTemplate, "updatedAt">[] = [
   },
 ];
 
-function getClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
-}
-
-let schemaReady = false;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function ensureSchema(client: any) {
-  if (schemaReady) return;
-  schemaReady = true;
-  await client.rpc("exec_sql", {
-    sql: `CREATE TABLE IF NOT EXISTS followup_templates (
-      step INTEGER PRIMARY KEY,
-      channel TEXT NOT NULL DEFAULT 'whatsapp',
-      message TEXT NOT NULL,
-      subject TEXT,
-      updated_at TIMESTAMPTZ DEFAULT NOW()
-    )`,
-  }).catch(() => null);
-  await client.rpc("exec_sql", {
-    sql: `CREATE TABLE IF NOT EXISTS followup_log (
-      id BIGSERIAL PRIMARY KEY,
-      deal_id TEXT NOT NULL,
-      step INTEGER NOT NULL,
-      sent_at TIMESTAMPTZ DEFAULT NOW(),
-      channel TEXT,
-      ok BOOLEAN DEFAULT TRUE
-    )`,
-  }).catch(() => null);
+function memDefaults(): FollowupTemplate[] {
+  return DEFAULT_TEMPLATES.map((t) => ({ ...t, updatedAt: new Date().toISOString() }));
 }
 
 export async function getTemplates(): Promise<FollowupTemplate[]> {
-  const client = getClient();
-  if (!client) return DEFAULT_TEMPLATES.map((t) => ({ ...t, updatedAt: new Date().toISOString() }));
-  await ensureSchema(client);
+  if (!client) return memDefaults();
 
-  const { data, error } = await client.from("followup_templates").select("*").order("step");
-  if (error || !data || data.length === 0) {
-    // Popula com defaults na primeira vez
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await client.from("followup_templates").upsert(
+  const rows = await client.select().from(schema.followupTemplates).orderBy(asc(schema.followupTemplates.step));
+  if (rows.length === 0) {
+    // Popula com defaults na primeira vez.
+    await client.insert(schema.followupTemplates).values(
       DEFAULT_TEMPLATES.map((t) => ({ step: t.step, channel: t.channel, message: t.message, subject: t.subject ?? null }))
     );
-    return DEFAULT_TEMPLATES.map((t) => ({ ...t, updatedAt: new Date().toISOString() }));
+    return memDefaults();
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return data.map((r: any) => ({
-    step: r.step, channel: r.channel, message: r.message,
-    subject: r.subject ?? undefined, updatedAt: r.updated_at,
+  return rows.map((r) => ({
+    step: r.step as FollowupTemplate["step"],
+    channel: r.channel as FollowupTemplate["channel"],
+    message: r.message,
+    subject: r.subject ?? undefined,
+    updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt),
   }));
 }
 
 export async function saveTemplate(step: number, patch: { channel?: string; message?: string; subject?: string }) {
-  const client = getClient();
   if (!client) return;
-  await ensureSchema(client);
-  await client.from("followup_templates").upsert({
-    step, ...patch, updated_at: new Date().toISOString(),
-  });
+  await client.insert(schema.followupTemplates)
+    .values({ step, channel: patch.channel ?? "whatsapp", message: patch.message ?? "", subject: patch.subject ?? null, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: schema.followupTemplates.step,
+      set: { ...patch, updatedAt: new Date() },
+    });
 }
 
 export async function logFollowupSent(dealId: string, step: number, channel: string, ok: boolean) {
-  const client = getClient();
   if (!client) return;
-  await ensureSchema(client);
-  await client.from("followup_log").insert({ deal_id: dealId, step, channel, ok });
+  await client.insert(schema.followupLog).values({ dealId, step, channel, ok });
 }
 
 export function renderTemplate(message: string, vars: Record<string, string>): string {
   return message.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "");
 }
-
-export { getClient as getFollowupClient };

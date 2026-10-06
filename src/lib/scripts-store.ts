@@ -8,38 +8,17 @@
  * quantos scripts quiser em cada categoria, sem nenhum disparo automático —
  * só consulta manual (copiar e usar na conversa).
  *
- * Persistido no Supabase via exec_sql (mesmo padrão de followup-playbook-store.ts).
+ * Server-only — fala Drizzle/Postgres direto (nunca importado por
+ * componentes "use client"; automations-view.tsx importa só os tipos e
+ * SCRIPT_CATEGORY_LABELS, que não tocam o banco).
  */
 
-import { createClient } from "@supabase/supabase-js";
+import { eq, asc } from "drizzle-orm";
+import { db as client, schema } from "@/db";
+import type { Script, ScriptCategory } from "@/lib/scripts-labels";
 
-export type ScriptCategory =
-  | "followup"
-  | "remarketing"
-  | "reativacao"
-  | "objecao"
-  | "fechamento"
-  | "vendas";
-
-export const SCRIPT_CATEGORY_LABELS: Record<ScriptCategory, string> = {
-  followup:    "Follow-up",
-  remarketing: "Remarketing",
-  reativacao:  "Reativação de lead",
-  objecao:     "Quebra de objeção",
-  fechamento:  "Fechamento de venda",
-  vendas:      "Script de vendas",
-};
-
-export interface Script {
-  id: string;
-  category: ScriptCategory;
-  title: string;
-  channel: "whatsapp" | "email" | "call";
-  body: string;
-  active: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+export { SCRIPT_CATEGORY_LABELS } from "@/lib/scripts-labels";
+export type { Script, ScriptCategory } from "@/lib/scripts-labels";
 
 /** Alguns pontos de partida por categoria — o usuário edita/apaga/cria à vontade. */
 const SEED_SCRIPTS: Omit<Script, "id" | "createdAt" | "updatedAt">[] = [
@@ -115,34 +94,6 @@ const SEED_SCRIPTS: Omit<Script, "id" | "createdAt" | "updatedAt">[] = [
   },
 ];
 
-function getClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
-}
-
-let schemaReady = false;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function ensureSchema(client: any) {
-  if (schemaReady) return;
-  schemaReady = true;
-  await client
-    .rpc("exec_sql", {
-      sql: `CREATE TABLE IF NOT EXISTS scripts (
-        id TEXT PRIMARY KEY,
-        category TEXT NOT NULL DEFAULT 'vendas',
-        title TEXT NOT NULL,
-        channel TEXT NOT NULL DEFAULT 'whatsapp',
-        body TEXT NOT NULL,
-        active BOOLEAN NOT NULL DEFAULT TRUE,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )`,
-    })
-    .catch(() => null);
-}
-
 function uid() {
   return `scr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -153,45 +104,41 @@ function memSeed(): Script[] {
   return SEED_SCRIPTS.map((s) => ({ ...s, id: uid(), createdAt: now, updatedAt: now }));
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toScript(r: any): Script {
+  return {
+    id: r.id,
+    category: r.category as ScriptCategory,
+    title: r.title,
+    channel: r.channel as Script["channel"],
+    body: r.body,
+    active: r.active ?? true,
+    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+    updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : r.updatedAt,
+  };
+}
+
 export async function getScripts(): Promise<Script[]> {
-  const client = getClient();
   if (!client) {
     if (!memScripts) memScripts = memSeed();
     return memScripts;
   }
-  await ensureSchema(client);
 
-  const { data, error } = await client.from("scripts").select("*").order("created_at");
+  const rows = await client.select().from(schema.scripts).orderBy(asc(schema.scripts.createdAt));
 
-  if (error) {
-    console.error("[scripts-store] erro ao ler scripts:", error.message);
-    return [];
-  }
-
-  if (!data || data.length === 0) {
+  if (rows.length === 0) {
     // Popula com os exemplos iniciais na primeira vez.
     const seed = memSeed();
-    const { error: seedErr } = await client.from("scripts").upsert(
+    await client.insert(schema.scripts).values(
       seed.map((s) => ({
         id: s.id, category: s.category, title: s.title, channel: s.channel,
-        body: s.body, active: s.active, created_at: s.createdAt, updated_at: s.updatedAt,
+        body: s.body, active: s.active, createdAt: new Date(s.createdAt), updatedAt: new Date(s.updatedAt),
       }))
     );
-    if (seedErr) console.error("[scripts-store] erro ao semear scripts:", seedErr.message);
     return seed;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return data.map((r: any) => ({
-    id: r.id,
-    category: r.category as ScriptCategory,
-    title: r.title,
-    channel: (r.channel === "email" ? "email" : r.channel === "call" ? "call" : "whatsapp") as Script["channel"],
-    body: r.body,
-    active: r.active ?? true,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  }));
+  return rows.map(toScript);
 }
 
 export async function createScript(
@@ -200,18 +147,15 @@ export async function createScript(
   const now = new Date().toISOString();
   const script: Script = { ...s, id: uid(), createdAt: now, updatedAt: now };
 
-  const client = getClient();
   if (!client) {
     if (!memScripts) memScripts = memSeed();
     memScripts = [...memScripts, script];
     return script;
   }
-  await ensureSchema(client);
-  const { error } = await client.from("scripts").insert({
+  await client.insert(schema.scripts).values({
     id: script.id, category: script.category, title: script.title, channel: script.channel,
-    body: script.body, active: script.active, created_at: script.createdAt, updated_at: script.updatedAt,
+    body: script.body, active: script.active, createdAt: new Date(script.createdAt), updatedAt: new Date(script.updatedAt),
   });
-  if (error) console.error("[scripts-store] erro ao criar script:", error.message);
   return script;
 }
 
@@ -219,30 +163,24 @@ export async function updateScript(
   id: string,
   patch: Partial<Omit<Script, "id" | "createdAt">>
 ): Promise<void> {
-  const client = getClient();
   if (!client) {
     if (!memScripts) memScripts = memSeed();
     memScripts = memScripts.map((s) => (s.id === id ? { ...s, ...patch, updatedAt: new Date().toISOString() } : s));
     return;
   }
-  await ensureSchema(client);
-  const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const row: Record<string, unknown> = { updatedAt: new Date() };
   if (patch.category !== undefined) row.category = patch.category;
   if (patch.title !== undefined) row.title = patch.title;
   if (patch.channel !== undefined) row.channel = patch.channel;
   if (patch.body !== undefined) row.body = patch.body;
   if (patch.active !== undefined) row.active = patch.active;
-  const { error } = await client.from("scripts").update(row).eq("id", id);
-  if (error) console.error("[scripts-store] erro ao atualizar script:", error.message);
+  await client.update(schema.scripts).set(row).where(eq(schema.scripts.id, id));
 }
 
 export async function deleteScript(id: string): Promise<void> {
-  const client = getClient();
   if (!client) {
     if (memScripts) memScripts = memScripts.filter((s) => s.id !== id);
     return;
   }
-  await ensureSchema(client);
-  const { error } = await client.from("scripts").delete().eq("id", id);
-  if (error) console.error("[scripts-store] erro ao apagar script:", error.message);
+  await client.delete(schema.scripts).where(eq(schema.scripts.id, id));
 }

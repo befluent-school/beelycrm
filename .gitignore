@@ -37,6 +37,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Postgres local (cluster próprio de dev — porta 5436, nunca a 5432 do
+# sistema). Dados reais do banco, nunca commitar.
+/.pgdata
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

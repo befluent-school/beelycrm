@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { and, eq, inArray, like } from "drizzle-orm";
+import { db as client, schema } from "@/db";
 
 export const dynamic = "force-dynamic";
 
@@ -12,38 +13,29 @@ export const dynamic = "force-dynamic";
  * Execute uma vez após o deploy para limpar o histórico existente.
  */
 export async function GET() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    return NextResponse.json({ ok: false, reason: "no_supabase_config" });
+  if (!client) {
+    return NextResponse.json({ ok: false, reason: "db_not_configured" });
   }
-  const client = createClient(url, key);
 
   // Busca candidatas antes de apagar, para retornar um relatório do que foi removido
-  const { data: candidates, error: selectError } = await client
-    .from("inbox_messages")
-    .select("id, from, from_name, from_me, text")
-    .eq("from_me", true)
-    .like("from", "%@%");
+  const candidates = await client.select({
+    id: schema.inboxMessages.id,
+    from: schema.inboxMessages.from,
+    fromName: schema.inboxMessages.fromName,
+    text: schema.inboxMessages.text,
+  }).from(schema.inboxMessages)
+    .where(and(eq(schema.inboxMessages.fromMe, true), like(schema.inboxMessages.from, "%@%")));
 
-  if (selectError) {
-    return NextResponse.json({ ok: false, error: selectError.message });
-  }
-
-  if (!candidates || candidates.length === 0) {
+  if (candidates.length === 0) {
     return NextResponse.json({ ok: true, removed: 0, message: "Nenhuma conversa fantasma encontrada." });
   }
 
   const ids = candidates.map((c) => c.id);
-  const { error: deleteError } = await client.from("inbox_messages").delete().in("id", ids);
-
-  if (deleteError) {
-    return NextResponse.json({ ok: false, error: deleteError.message });
-  }
+  await client.delete(schema.inboxMessages).where(inArray(schema.inboxMessages.id, ids));
 
   return NextResponse.json({
     ok: true,
     removed: candidates.length,
-    samples: candidates.slice(0, 10).map((c) => ({ from: c.from, fromName: c.from_name, text: c.text?.slice(0, 40) })),
+    samples: candidates.slice(0, 10).map((c) => ({ from: c.from, fromName: c.fromName, text: c.text?.slice(0, 40) })),
   });
 }

@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { pushMessage } from "@/lib/message-store";
 import { getWaAdapter } from "@/lib/wa-providers";
-import type { Sdr } from "@/lib/store";
+import { fetchSdrWithSecrets } from "@/lib/sdrs-server";
 
 /**
  * POST /api/inbox/send
- * Envia mensagem via WhatsApp e registra no Supabase (aparece no chat).
+ * Envia mensagem via WhatsApp e registra no Postgres (aparece no chat).
  *
  * Body: { sdrId?, phone, text, contactName?, instanceId?, token? }
  *
@@ -38,7 +37,7 @@ export async function POST(request: Request) {
   let providerName: "zapi" | "meta_cloud" | "legacy" = "legacy";
 
   if (sdrId) {
-    const sdr = await fetchSdr(sdrId);
+    const sdr = await fetchSdrWithSecrets(sdrId);
     if (!sdr) {
       sendError = `SDR ${sdrId} não encontrado`;
     } else {
@@ -101,31 +100,4 @@ export async function POST(request: Request) {
     ts,
     msg: saved,
   });
-}
-
-async function fetchSdr(id: string): Promise<Sdr | null> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  const supabase = createClient(url, key);
-  const { data, error } = await supabase.from("sdrs").select("*").eq("id", id).limit(1);
-  if (error || !data || data.length === 0) return null;
-  const r = data[0];
-  return {
-    id: r.id,
-    name: r.name,
-    email: r.email ?? undefined,
-    avatarColor: r.avatar_color ?? undefined,
-    active: r.active ?? true,
-    waProvider: r.wa_provider ?? undefined,
-    zapiInstanceId: r.zapi_instance_id ?? undefined,
-    zapiToken: r.zapi_token ?? undefined,
-    zapiClientToken: r.zapi_client_token ?? undefined,
-    metaPhoneNumberId: r.meta_phone_number_id ?? undefined,
-    metaAccessToken: r.meta_access_token ?? undefined,
-    metaWabaId: r.meta_waba_id ?? undefined,
-    metaVerifyToken: r.meta_verify_token ?? undefined,
-    phoneDisplay: r.phone_display ?? undefined,
-    createdAt: r.created_at,
-  };
 }
