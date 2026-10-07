@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthMessage } from "./auth-message";
 
-export function NewPasswordForm() {
+export function NewPasswordForm({ resetToken }: { resetToken?: string }) {
   const [state, action, pending] = useActionState(changePasswordAction, undefined);
 
   return (
@@ -21,6 +21,7 @@ export function NewPasswordForm() {
 
       <form action={action} className="space-y-4">
         <AuthMessage state={state} />
+        {resetToken && <input type="hidden" name="token" value={resetToken} />}
         <div className="space-y-1.5">
           <Label htmlFor="password">Nova senha</Label>
           <Input id="password" name="password" type="password" autoComplete="new-password" required minLength={8} />

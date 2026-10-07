@@ -2,25 +2,18 @@
 
 import { Button } from "@/components/ui/button";
 import { IS_DEMO } from "@/lib/env";
-import { createClient } from "@/lib/supabase/client";
 
 export function GoogleButton() {
-  async function handleGoogle() {
+  function handleGoogle() {
     if (IS_DEMO) {
       document.cookie = "beely_session=demo; path=/; max-age=604800";
       window.location.href = "/dashboard";
       return;
     }
-    const supabase = createClient();
-    // redirectTo é o destino APÓS o Supabase processar o callback OAuth.
-    // O Supabase usa o próprio endpoint interno para o Google — não passamos /auth/callback aqui.
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/dashboard`,
-        queryParams: { prompt: "select_account" },
-      },
-    });
+    // Redireciona para a rota própria, que gera o state anti-CSRF e manda
+    // pro consentimento do Google — o fluxo OAuth é todo server-side agora
+    // (antes era mediado pelo client do Supabase Auth).
+    window.location.href = "/auth/google/start";
   }
 
   return (

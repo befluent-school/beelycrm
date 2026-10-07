@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { createServerClient } from "@supabase/ssr";
 
 /**
  * Proxy (Next 16 equivalent of Middleware).
- * 1. Atualiza cookies de sessão Supabase em cada request (necessário para OAuth no mobile)
- * 2. Protege rotas autenticadas
+ * Protege rotas autenticadas checando só a PRESENÇA do cookie de sessão
+ * própria — validação real (existe no banco? não expirou? usuário ativo?)
+ * sempre acontece depois, em getCurrentSession() nos Server
+ * Components/Actions e nas Route Handlers. Isso aqui é só conveniência de
+ * navegação (evita renderizar a página protegida pra depois redirecionar),
+ * nunca o limite de segurança de verdade — mesmo princípio do proxy.ts do
+ * BeeFlow.
  */
 const PROTECTED = [
   "/dashboard",
@@ -25,53 +29,25 @@ const PROTECTED = [
   "/debug",
 ];
 
+const SESSION_COOKIE = "beely_session_token";
+const DEMO_COOKIE = "beely_session";
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  let response = NextResponse.next({ request });
-
-  // Atualiza cookies de sessão Supabase (necessário para Google OAuth funcionar no mobile)
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (supabaseUrl && supabaseKey) {
-    const supabase = createServerClient(supabaseUrl, supabaseKey, {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
-          response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          );
-        },
-      },
-    });
-    // Refresh do token sem bloquear — erros ignorados (modo demo sem Supabase)
-    await supabase.auth.getUser().catch(() => null);
-  }
-
-  // Proteção de rotas
   const needsAuth = PROTECTED.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-  if (!needsAuth) return response;
+  if (!needsAuth) return NextResponse.next();
 
-  const hasDemoSession = request.cookies.has("beely_session");
-  const hasSupabaseSession = request.cookies
-    .getAll()
-    .some((c) => c.name.startsWith("sb-") && c.name.includes("auth-token"));
+  const hasSession = request.cookies.has(SESSION_COOKIE) || request.cookies.has(DEMO_COOKIE);
 
-  if (!hasDemoSession && !hasSupabaseSession) {
+  if (!hasSession) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }
 
-  return response;
+  return NextResponse.next();
 }
 
 export const config = {

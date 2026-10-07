@@ -697,7 +697,7 @@ export function SettingsView({ defaultTab = "geral" }: { defaultTab?: string }) 
 
         <SdrConnect key={editingSdr?.id ?? "new"} sdr={editingSdr} open={sdrConnectOpen} onOpenChange={setSdrConnectOpen} />
 
-        <SupabaseDiagnosticsCard />
+        <DbDiagnosticsCard />
       </TabsContent>
 
       {/* ─── Equipe ────────────────────────────────────────────── */}
@@ -1121,15 +1121,15 @@ function StageBenchmarkEditor() {
 }
 
 /* ── Diagnóstico de persistência no Postgres + limpeza de conversas órfãs ── */
-interface SupabaseStatus {
+interface DbStatus {
   ok: boolean;
   reason?: string;
   connection: { available: boolean; error?: string };
   tables: Record<string, { exists: boolean; count?: number; error?: string }>;
 }
 
-function SupabaseDiagnosticsCard() {
-  const [status, setStatus] = useState<SupabaseStatus | null>(null);
+function DbDiagnosticsCard() {
+  const [status, setStatus] = useState<DbStatus | null>(null);
   const [checking, setChecking] = useState(false);
   const [cleaning, setCleaning] = useState(false);
 

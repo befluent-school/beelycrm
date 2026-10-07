@@ -8,7 +8,7 @@ import { STAGES_COMERCIAL_BF, COMERCIAL_BF_PIPELINE_ID } from "@/lib/demo-data";
 
 /**
  * Garante que o "Funil Comercial Be Fluent" (Playbook v3, 8 etapas) exista.
- * Aditivo: se ausente na lista vinda do Supabase, anexa e persiste. Nunca
+ * Aditivo: se ausente na lista vinda do banco, anexa e persiste. Nunca
  * remove ou altera funis existentes.
  */
 function ensureComercialBfPipeline(pipelines: DbSnapshot["pipelines"]): DbSnapshot["pipelines"] {
@@ -23,37 +23,33 @@ function ensureComercialBfPipeline(pipelines: DbSnapshot["pipelines"]): DbSnapsh
 }
 
 /**
- * Hidrata o store Zustand com dados do Supabase na inicialização, e mantém
- * refrescando periodicamente — sem isso, uma aba aberta (ou navegação só
- * client-side dentro da SPA, sem reload) ficava com o dashboard/CRM inteiro
- * congelado nos dados do primeiro carregamento daquela aba: nenhum negócio
- * novo, nenhuma virada de mês, nada, até um F5 manual. Também mantém o
- * Render free tier ativo via keep-alive a cada 10 min.
+ * Hidrata o store Zustand com dados do Postgres (via /api/data, ver
+ * src/lib/db.ts) na inicialização, e mantém refrescando periodicamente —
+ * sem isso, uma aba aberta (ou navegação só client-side dentro da SPA, sem
+ * reload) ficava com o dashboard/CRM inteiro congelado nos dados do
+ * primeiro carregamento daquela aba.
  *
  * Fluxo:
  * 1. Aguarda hidratação do localStorage (Zustand persist)
- * 2. Chama loadAll() — tenta carregar dados do Supabase
- * 3. Se banco tem dados → hidrata store (Supabase vira source of truth)
+ * 2. Chama loadAll() — tenta carregar dados do banco
+ * 3. Se banco tem dados → hidrata store (banco vira source of truth)
  * 4. Se banco vazio → envia snapshot do localStorage para /api/migrate
+ *    (seed inicial — só funciona uma vez, com o banco vazio)
  * 5. Repete o passo 2/3 a cada REFRESH_MS e sempre que a aba volta a ficar
  *    visível (troca de aba, minimizar/restaurar, computador voltando do sleep).
+ *
+ * Não roda mais init-schema via exec_sql (padrão antigo do Supabase) — o
+ * schema agora é só migrations versionadas do Drizzle, aplicadas no deploy
+ * (deploy/update.sh), nunca em runtime.
  */
 const REFRESH_MS = 2 * 60 * 1000; // 2 min
 
-export function useSupabaseSync() {
+export function useDataSync() {
   const synced = useRef(false);
 
   useEffect(() => {
-    // Keep-alive: pinga o servidor a cada 10 min para o Render não hibernar
-    const keepAlive = setInterval(() => {
-      fetch("/api/ping").catch(() => {/* silencioso */});
-    }, 10 * 60 * 1000);
-
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    if (!supabaseUrl) return () => clearInterval(keepAlive);
-
     /**
-     * Refresco leve: só relê o Supabase e atualiza o store — sem lógica de
+     * Refresco leve: só relê o banco e atualiza o store — sem lógica de
      * migração. Faz merge por id em vez de sobrescrever as listas: uma
      * importação em lote (centenas de upserts em voo) pode não ter
      * terminado de persistir quando este refresh dispara, e um overwrite
@@ -80,7 +76,7 @@ export function useSupabaseSync() {
           });
         }
       } catch (e) {
-        console.error("[sync] Falha ao refrescar dados do Supabase:", e);
+        console.error("[sync] Falha ao refrescar dados:", e);
       }
     };
 
@@ -90,7 +86,6 @@ export function useSupabaseSync() {
 
     if (synced.current) {
       return () => {
-        clearInterval(keepAlive);
         clearInterval(refreshInterval);
         document.removeEventListener("visibilitychange", onVisible);
       };
@@ -99,18 +94,13 @@ export function useSupabaseSync() {
 
     const run = async () => {
       try {
-        // Garante (aditivamente) o schema do Playbook Comercial Be Fluent v3 e do
-        // Inbox multi-SDR. Idempotente; falha silenciosa não bloqueia a sincronização.
-        fetch("/api/playbook/init-schema").catch(() => {/* silencioso */});
-        fetch("/api/inbox/init-schema").catch(() => {/* silencioso */});
-
         const snapshot = await loadAll();
 
         if (snapshot) {
           // Banco tem dados — hidrata o store. Merge por id (não overwrite):
           // se a página recarrega logo após uma importação em lote, os
-          // upserts de contacts/deals ainda podem estar em voo no Supabase —
-          // um overwrite puro aqui reproduziria, já no PRIMEIRO load da aba,
+          // upserts de contacts/deals ainda podem estar em voo — um
+          // overwrite puro aqui reproduziria, já no PRIMEIRO load da aba,
           // o mesmo bug de "leads somem" que o refresh periódico já corrige
           // depois de rodando. localStorage (já persistido pelo Zustand
           // antes deste efeito rodar) é a fonte mais recente para o que
@@ -129,15 +119,15 @@ export function useSupabaseSync() {
             financialConfig:   snapshot.financialConfig,
             sdrs:              mergeById(cur.sdrs, snapshot.sdrs),
           });
-          console.log("[sync] Store hidratado do Supabase");
+          console.log("[sync] Store hidratado do banco");
           // Limpa flag antigo se existir (banco foi repopulado)
-          localStorage.removeItem("beely-migrated-to-supabase");
+          localStorage.removeItem("beely-migrated-to-db");
         } else {
-          // Banco vazio — migra dados do localStorage para o Supabase
-          const alreadyMigrated = localStorage.getItem("beely-migrated-to-supabase");
+          // Banco vazio — migra dados do localStorage para o banco (seed inicial)
+          const alreadyMigrated = localStorage.getItem("beely-migrated-to-db");
           if (alreadyMigrated) {
             // Remove flag para tentar novamente — banco pode ter sido limpo
-            localStorage.removeItem("beely-migrated-to-supabase");
+            localStorage.removeItem("beely-migrated-to-db");
           }
 
           const state = useStore.getState();
@@ -164,10 +154,10 @@ export function useSupabaseSync() {
           const result = await res.json();
 
           if (result.ok) {
-            localStorage.setItem("beely-migrated-to-supabase", new Date().toISOString());
+            localStorage.setItem("beely-migrated-to-db", new Date().toISOString());
             console.log("[sync] Migração concluída:", result.migrated ?? "skipped");
 
-            // Após migrar, recarrega do Supabase para confirmar
+            // Após migrar, recarrega do banco para confirmar
             const fresh = await loadAll();
             if (fresh) {
               useStore.setState({
@@ -190,7 +180,7 @@ export function useSupabaseSync() {
           }
         }
       } catch (e) {
-        console.error("[sync] Falha ao sincronizar com Supabase:", e);
+        console.error("[sync] Falha ao sincronizar com o banco:", e);
       }
     };
 
@@ -204,7 +194,6 @@ export function useSupabaseSync() {
     }
 
     return () => {
-      clearInterval(keepAlive);
       clearInterval(refreshInterval);
       document.removeEventListener("visibilitychange", onVisible);
     };

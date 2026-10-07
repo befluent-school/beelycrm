@@ -540,3 +540,59 @@ export const webhookDebugLog = pgTable("webhook_debug_log", {
   body: text("body"), // JSON stringificado
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
+
+/* ─── Autenticação própria (substitui Supabase Auth) ──────
+ * Modelada no padrão já validado em produção pelo BeeFlow: sessão em
+ * cookie opaco (hash SHA-256 armazenado, nunca o token em texto puro),
+ * senha com scrypt nativo do Node, tokens de reset com expiração curta e
+ * uso único. Totalmente separada de `profiles`/`organizations` (que são
+ * dados de exibição do CRM, não a fonte de verdade de autenticação) —
+ * users.id é o novo id canônico de usuário.
+ */
+export const users = pgTable("users", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  email: text("email").notNull().unique(),
+  // Formato auto-descritivo: scrypt$<logN>$<r>$<p>$<saltB64>$<hashB64> —
+  // null para contas que só entram via Google (sem senha própria ainda).
+  passwordHash: text("password_hash"),
+  name: text("name"),
+  googleId: text("google_id").unique(),
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+  mustChangePassword: boolean("must_change_password").notNull().default(false),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    // SHA-256 do token — o valor bruto só existe no cookie do navegador,
+    // nunca persistido. Login = sessão nova; nunca UPDATE num token existente.
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }).defaultNow().notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("sessions_user_idx").on(t.userId)]
+);
+
+export const authTokenTypeEnum = ["password_reset"] as const;
+
+export const authTokens = pgTable(
+  "auth_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").notNull(), // "password_reset" — union acima documenta os valores válidos
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("auth_tokens_user_type_idx").on(t.userId, t.type)]
+);

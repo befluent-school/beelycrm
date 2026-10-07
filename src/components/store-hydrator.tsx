@@ -2,13 +2,13 @@
 
 import { useEffect, useRef } from "react";
 import { useStore } from "@/lib/store";
-import { useSupabaseSync } from "@/lib/use-supabase-sync";
+import { useDataSync } from "@/lib/use-data-sync";
 
 /**
  * Triggers Zustand persist rehydration exactly once after the component mounts.
  * Must be rendered inside the client tree, never on the server.
  * Using skipHydration:true in the store prevents the "state update before mount" error.
- * After localStorage rehydration, also syncs with Supabase.
+ * After localStorage rehydration, also syncs with the database.
  */
 export function StoreHydrator() {
   const hydrated = useRef(false);
@@ -19,8 +19,8 @@ export function StoreHydrator() {
     useStore.persist.rehydrate();
   }, []);
 
-  // Supabase sync happens after localStorage hydration
-  useSupabaseSync();
+  // DB sync happens after localStorage hydration
+  useDataSync();
 
   return null;
 }

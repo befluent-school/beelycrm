@@ -332,7 +332,7 @@ export function SdrConnect({
                 </p>
               ) : (
                 <p className="text-[10px] text-muted-foreground">
-                  Credenciais salvas no seu banco Supabase — não há cofre de segredo dedicado nesta versão; não exponha esta URL publicamente.
+                  Credenciais salvas no seu banco de dados — não há cofre de segredo dedicado nesta versão; não exponha esta URL publicamente.
                 </p>
               )}
             </div>

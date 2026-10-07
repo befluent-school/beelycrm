@@ -3,7 +3,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { IS_DEMO } from "@/lib/env";
-import { createClient } from "@/lib/supabase/server";
+import * as authService from "@/lib/auth/service";
+import { setSessionCookie, clearSessionCookie, SESSION_COOKIE, revokeSession, getCurrentSession } from "@/lib/auth/session";
 
 const DEMO_COOKIE = "beely_session";
 
@@ -21,9 +22,9 @@ export async function loginAction(_prev: AuthState, formData: FormData): Promise
     redirect("/dashboard");
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return { error: "E-mail ou senha inválidos." };
+  const result = await authService.loginWithPassword(email, password);
+  if (!result.ok || !result.token) return { error: result.error ?? "E-mail ou senha inválidos." };
+  await setSessionCookie(result.token);
   redirect("/dashboard");
 }
 
@@ -43,13 +44,9 @@ export async function signupAction(_prev: AuthState, formData: FormData): Promis
     redirect("/dashboard");
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: { data: { full_name: name } },
-  });
-  if (error) return { error: error.message };
+  const result = await authService.signup(email, password, name);
+  if (!result.ok || !result.token) return { error: result.error ?? "Não foi possível criar sua conta." };
+  await setSessionCookie(result.token);
   redirect("/dashboard");
 }
 
@@ -65,14 +62,9 @@ export async function forgotPasswordAction(_prev: AuthState, formData: FormData)
     };
   }
 
-  // Produção: gera um link de recuperação de uso único (Supabase Auth) e
-  // envia via Resend — nenhuma senha real é criada ou trafega em texto puro.
-  const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/auth/forgot-password`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email }),
-  });
-  if (!res.ok) return { error: "Não foi possível processar. Tente novamente." };
+  // Sempre devolve a mesma mensagem genérica — requestPasswordReset já é
+  // silenciosa internamente quando o e-mail não existe (sem enumeração).
+  await authService.requestPasswordReset(email).catch((e) => console.error("[auth] forgot-password falhou:", e));
   return { notice: "Se o e-mail existir, enviamos um link para redefinir sua senha. Verifique sua caixa de entrada." };
 }
 
@@ -80,14 +72,31 @@ export async function forgotPasswordAction(_prev: AuthState, formData: FormData)
 export async function changePasswordAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const password = String(formData.get("password") ?? "");
   const confirm = String(formData.get("confirm") ?? "");
+  const resetToken = formData.get("token") ? String(formData.get("token")) : undefined;
   if (password.length < 8) return { error: "A senha deve ter ao menos 8 caracteres." };
   if (password !== confirm) return { error: "As senhas não coincidem." };
 
   if (IS_DEMO) redirect("/dashboard");
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.updateUser({ password, data: { must_change_password: false } });
-  if (error) return { error: error.message };
+  // Veio de um link de "esqueci minha senha" (?token=) — não exige sessão.
+  if (resetToken) {
+    const result = await authService.resetPasswordWithToken(resetToken, password);
+    if (!result.ok) return { error: result.error ?? "Não foi possível redefinir a senha." };
+    redirect("/login?reset=ok");
+  }
+
+  // Troca voluntária — exige sessão ativa.
+  const session = await getCurrentSession();
+  if (!session) redirect("/login");
+
+  const result = await authService.changePassword(session.user.id, password);
+  if (!result.ok) return { error: result.error ?? "Não foi possível trocar a senha." };
+
+  // changePassword revoga todas as sessões (inclusive a atual) — gera uma
+  // nova para não deslogar quem acabou de trocar a própria senha.
+  const { createSession } = await import("@/lib/auth/session");
+  const newToken = await createSession(session.user.id);
+  await setSessionCookie(newToken);
   redirect("/dashboard");
 }
 
@@ -97,8 +106,11 @@ export async function logoutAction() {
     (await cookies()).delete(DEMO_COOKIE);
     redirect("/login");
   }
-  const supabase = await createClient();
-  await supabase.auth.signOut();
+
+  const store = await cookies();
+  const token = store.get(SESSION_COOKIE)?.value;
+  if (token) await revokeSession(token).catch((e) => console.error("[auth] logout falhou:", e));
+  await clearSessionCookie();
   redirect("/login");
 }
 
