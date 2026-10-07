@@ -1,0 +1,14 @@
+# ============================================================
+# Beely CRM — crontab do usuário deploy.
+# Instale com: crontab -e (logado como deploy), cole as linhas abaixo
+# (ajustando CRON_SECRET para o valor real do .env de produção).
+# ============================================================
+
+# Backup diário às 3h
+0 3 * * * /usr/bin/bash /var/www/beely/deploy/backup.sh >> /var/log/beely-backup.log 2>&1
+
+# Follow-up sequencial (5 etapas) — 1x por dia às 9h
+0 9 * * * curl -fsS -H "x-cron-secret: SEU_CRON_SECRET_AQUI" "https://crm.befluentschool.com.br/api/cron/followups" >> /var/log/beely-cron.log 2>&1
+
+# Follow-up por situação (Playbook Comercial Be Fluent v3) — 1x por dia às 9h15
+15 9 * * * curl -fsS -H "x-cron-secret: SEU_CRON_SECRET_AQUI" "https://crm.befluentschool.com.br/api/cron/playbook-followups" >> /var/log/beely-cron.log 2>&1
