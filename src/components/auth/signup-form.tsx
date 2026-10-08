@@ -10,7 +10,7 @@ import { GoogleButton } from "./google-button";
 import { AuthMessage } from "./auth-message";
 import { TRIAL_DAYS } from "@/lib/site";
 
-export function SignupForm() {
+export function SignupForm({ showGoogle }: { showGoogle: boolean }) {
   const [state, action, pending] = useActionState(signupAction, undefined);
 
   return (
@@ -22,8 +22,8 @@ export function SignupForm() {
         </p>
       </div>
 
-      <GoogleButton />
-      <Divider />
+      {showGoogle && <GoogleButton />}
+      {showGoogle && <Divider />}
 
       <form action={action} className="space-y-4">
         <AuthMessage state={state} />

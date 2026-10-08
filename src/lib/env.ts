@@ -57,9 +57,19 @@ export const env = {
  * Demo mode liga quando explicitamente pedido OU quando não há banco
  * configurado. Em modo demo a UI roda sobre dados mock/sessão em cookie
  * simples, sem exigir Postgres — útil para navegar o produto sem infra.
+ *
+ * IMPORTANTE: `env.databaseUrl` lê DATABASE_URL, que não tem prefixo
+ * NEXT_PUBLIC_ — no bundle do client essa var nunca existe (vira undefined
+ * em build), então checar `!env.databaseUrl` ali SEMPRE dá true, mesmo em
+ * produção com banco configurado (bug real: botão "Entrar com Google" e
+ * logout caindo no fluxo demo mesmo com auth real disponível). Módulos
+ * client-side devem usar IS_DEMO_CLIENT (só a var pública), nunca este.
  */
 export const IS_DEMO =
   process.env.NEXT_PUBLIC_DEMO_MODE === "true" || !env.databaseUrl;
+
+/** Único valor de "modo demo" seguro para ler em componentes "use client". */
+export const IS_DEMO_CLIENT = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 /** Provedores externos configurados? Usado pelas rotas para dar erro claro. */
 export const HAS_GMAIL_OAUTH = !!(env.googleOAuthClientId && env.googleOAuthClientSecret);

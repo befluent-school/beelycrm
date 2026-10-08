@@ -1,11 +1,11 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { IS_DEMO } from "@/lib/env";
+import { IS_DEMO_CLIENT } from "@/lib/env";
 
 export function GoogleButton() {
   function handleGoogle() {
-    if (IS_DEMO) {
+    if (IS_DEMO_CLIENT) {
       document.cookie = "beely_session=demo; path=/; max-age=604800";
       window.location.href = "/dashboard";
       return;

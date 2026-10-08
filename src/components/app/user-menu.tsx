@@ -10,14 +10,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { LogOut, Settings, User } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { IS_DEMO } from "@/lib/env";
+import { IS_DEMO_CLIENT } from "@/lib/env";
 import { initials } from "@/lib/utils";
 
 export function UserMenu({ name, email }: { name: string; email: string }) {
   const router = useRouter();
 
   async function handleLogout() {
-    if (IS_DEMO) {
+    if (IS_DEMO_CLIENT) {
       document.cookie = "beely_session=; path=/; max-age=0";
       window.location.href = "/login";
       return;

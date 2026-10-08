@@ -9,22 +9,22 @@ import { Label } from "@/components/ui/label";
 import { GoogleButton } from "./google-button";
 import { AuthMessage } from "./auth-message";
 
-export function LoginForm() {
+export function LoginForm({ showGoogle }: { showGoogle: boolean }) {
   const [state, action, pending] = useActionState(loginAction, undefined);
-  const [showEmail, setShowEmail] = useState(false);
+  const [showEmail, setShowEmail] = useState(!showGoogle);
 
   return (
     <div className="space-y-5">
       <div className="text-center">
         <h1 className="font-display text-2xl font-bold">Acessar o Beely</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Entre com sua Conta Google para continuar
+          {showGoogle ? "Entre com sua Conta Google para continuar" : "Entre com seu e-mail e senha"}
         </p>
       </div>
 
-      <GoogleButton />
+      {showGoogle && <GoogleButton />}
 
-      {!showEmail ? (
+      {showGoogle && !showEmail ? (
         <button
           type="button"
           onClick={() => setShowEmail(true)}
@@ -34,7 +34,7 @@ export function LoginForm() {
         </button>
       ) : (
         <>
-          <Divider />
+          {showGoogle && <Divider />}
           <form action={action} className="space-y-4">
             <AuthMessage state={state} />
             <div className="space-y-1.5">
