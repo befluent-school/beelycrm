@@ -34,7 +34,7 @@ export async function POST(request: Request) {
 
   let sendOk = false;
   let sendError = "";
-  let providerName: "zapi" | "meta_cloud" | "legacy" = "legacy";
+  let providerName: "zapi" | "meta_cloud" | "wa_lite" | "legacy" = "legacy";
 
   if (sdrId) {
     const sdr = await fetchSdrWithSecrets(sdrId);

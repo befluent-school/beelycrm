@@ -198,7 +198,7 @@ export interface StageBenchmark {
   alertFloorPct: number;          // piso; abaixo disso por 2 semanas = correcao (8.4)
 }
 /** Provedor de WhatsApp conectado a um SDR — Z-API ou Meta Cloud API (oficial). */
-export type WaProvider = "zapi" | "meta_cloud";
+export type WaProvider = "zapi" | "meta_cloud" | "wa_lite";
 
 /**
  * SDR — vendedor/atendente com seu próprio WhatsApp Business conectado.
@@ -237,6 +237,11 @@ export interface Sdr {
   hasWebhookSecret?: boolean;
   // Exibição
   phoneDisplay?: string;  // "+55 12 99999-9999"
+  // WhatsApp Lite (Baileys, QR Code) — status derivado server-side, não é
+  // segredo, pode ir direto ao client (sem indireção has* como os tokens).
+  waLiteStatus?: "disconnected" | "qr_pending" | "connected";
+  waLiteConnectedPhone?: string;
+  waLiteLastConnectedAt?: string;
   createdAt: string;
 }
 

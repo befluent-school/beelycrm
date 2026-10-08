@@ -30,6 +30,11 @@ export async function fetchSdrWithSecrets(id: string): Promise<Sdr | null> {
     metaVerifyToken: r.metaVerifyToken ?? undefined,
     webhookSecret: r.webhookSecret ?? undefined,
     phoneDisplay: r.phoneDisplay ?? undefined,
+    waLiteStatus: (r.waLiteStatus ?? undefined) as Sdr["waLiteStatus"],
+    waLiteConnectedPhone: r.waLiteConnectedPhone ?? undefined,
+    waLiteLastConnectedAt: r.waLiteLastConnectedAt instanceof Date
+      ? r.waLiteLastConnectedAt.toISOString()
+      : r.waLiteLastConnectedAt ?? undefined,
     createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
   };
 }

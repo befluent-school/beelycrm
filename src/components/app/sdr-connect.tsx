@@ -13,9 +13,17 @@ import { Badge } from "@/components/ui/badge";
 import { CopyField } from "@/components/app/copy-field";
 import { useStore, type Sdr, type WaProvider } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { Info, ExternalLink, Trash2, PlugZap, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { Info, ExternalLink, Trash2, PlugZap, CheckCircle2, AlertTriangle, Loader2, QrCode, Unplug } from "lucide-react";
 
 const PROVIDER_INFO: Record<WaProvider, { label: string; guide: string[]; link?: string; linkLabel?: string }> = {
+  wa_lite: {
+    label: "WhatsApp Lite (QR Code)",
+    guide: [
+      "Clique em \"Conectar\" abaixo para gerar o QR Code.",
+      "No celular, abra o WhatsApp → Mais opções (ou Configurações) → Aparelhos conectados → Conectar um aparelho.",
+      "Escaneie o QR Code exibido. A conexão fica pronta em poucos segundos.",
+    ],
+  },
   zapi: {
     label: "Z-API",
     guide: [
@@ -141,7 +149,9 @@ export function SdrConnect({
   async function save() {
     if (!name.trim()) return toast.error("Informe o nome do SDR.");
 
-    const hasCreds = provider === "meta_cloud"
+    const hasCreds = provider === "wa_lite"
+      ? false // nada a testar aqui — a conexão em si (painel de QR Code) já é o "teste"
+      : provider === "meta_cloud"
       ? !!(metaPhoneNumberId.trim() && metaAccessToken.trim())
       : !!(zapiInstanceId.trim() && zapiToken.trim());
 
@@ -238,8 +248,8 @@ export function SdrConnect({
           {/* Provedor de WhatsApp */}
           <div className="space-y-2 border-t border-border/60 pt-4">
             <Label>Provedor de WhatsApp</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {(["zapi", "meta_cloud"] as WaProvider[]).map((p) => (
+            <div className="grid grid-cols-3 gap-2">
+              {(["wa_lite", "zapi", "meta_cloud"] as WaProvider[]).map((p) => (
                 <button
                   key={p}
                   type="button"
@@ -279,7 +289,9 @@ export function SdrConnect({
               </div>
             )}
 
-            {provider === "zapi" ? (
+            {provider === "wa_lite" ? (
+              <WaLiteConnectPanel sdrId={savedId} />
+            ) : provider === "zapi" ? (
               <div className="space-y-2.5">
                 <F label="Instance ID" value={zapiInstanceId} onChange={setZapiInstanceId} placeholder="3D8..." />
                 <F
@@ -306,12 +318,14 @@ export function SdrConnect({
               </div>
             )}
 
-            <Button type="button" variant="outline" size="sm" className="w-full gap-1.5" onClick={testConnection} disabled={testing}>
-              {testing ? <Loader2 className="size-3.5 animate-spin" /> : <PlugZap className="size-3.5" />}
-              Testar conexão agora
-            </Button>
+            {provider !== "wa_lite" && (
+              <Button type="button" variant="outline" size="sm" className="w-full gap-1.5" onClick={testConnection} disabled={testing}>
+                {testing ? <Loader2 className="size-3.5 animate-spin" /> : <PlugZap className="size-3.5" />}
+                Testar conexão agora
+              </Button>
+            )}
 
-            {testResult && (
+            {testResult && provider !== "wa_lite" && (
               <div className={cn(
                 "flex items-start gap-2 rounded-lg border p-2.5 text-xs",
                 testResult.ok ? "border-green-500/30 bg-green-500/10 text-green-300" : "border-destructive/40 bg-destructive/10 text-destructive"
@@ -322,7 +336,7 @@ export function SdrConnect({
             )}
           </div>
 
-          {webhookUrl && (
+          {webhookUrl && provider !== "wa_lite" && (
             <div className="space-y-1.5 border-t border-border/60 pt-4">
               <Label>URL do Webhook (cole no painel do provedor)</Label>
               <CopyField value={webhookUrl} />
@@ -352,6 +366,131 @@ export function SdrConnect({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+type WaLiteStatus = "disconnected" | "qr_pending" | "connected";
+
+/**
+ * Painel de conexão do WhatsApp Lite — diferente dos outros providers
+ * ("preencher campos → testar"), aqui o fluxo é "clicar Conectar → ver QR
+ * ao vivo → aguardar o scan". Faz polling curto (2s) só enquanto o modal
+ * está aberto e aguardando conexão — pára assim que conecta ou desmonta.
+ */
+function WaLiteConnectPanel({ sdrId }: { sdrId: string | null }) {
+  const [status, setStatus] = useState<WaLiteStatus>("disconnected");
+  const [qrDataUrl, setQrDataUrl] = useState<string | undefined>(undefined);
+  const [phone, setPhone] = useState<string | undefined>(undefined);
+  const [loading, setLoading] = useState(false);
+
+  async function fetchStatus(id: string) {
+    try {
+      const res = await fetch(`/api/sdrs/wa-lite/status?sdrId=${encodeURIComponent(id)}`);
+      const data = await res.json();
+      setStatus(data.status ?? "disconnected");
+      setQrDataUrl(data.qrDataUrl);
+      setPhone(data.phone);
+    } catch {
+      // mantém o último estado conhecido — próximo poll tenta de novo
+    }
+  }
+
+  // Status inicial ao abrir o modal editando um SDR wa_lite já existente.
+  useEffect(() => {
+    if (sdrId) void fetchStatus(sdrId);
+  }, [sdrId]);
+
+  // Poll curto só enquanto aguardando QR/conexão.
+  useEffect(() => {
+    if (!sdrId || status === "connected" || status === "disconnected") return;
+    const interval = setInterval(() => void fetchStatus(sdrId), 2000);
+    return () => clearInterval(interval);
+  }, [sdrId, status]);
+
+  async function handleConnect() {
+    if (!sdrId) return;
+    setLoading(true);
+    try {
+      await fetch("/api/sdrs/wa-lite/connect", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sdrId }),
+      });
+      setStatus("qr_pending");
+      await fetchStatus(sdrId);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    if (!sdrId) return;
+    if (!confirm("Desconectar este WhatsApp? Será necessário escanear o QR Code de novo para reconectar.")) return;
+    setLoading(true);
+    try {
+      await fetch("/api/sdrs/wa-lite/disconnect", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sdrId }),
+      });
+      setStatus("disconnected");
+      setQrDataUrl(undefined);
+      setPhone(undefined);
+      toast.success("WhatsApp desconectado.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!sdrId) {
+    return (
+      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
+        Salve o SDR primeiro (botão &quot;Criar SDR&quot; abaixo) — depois reabra para conectar o WhatsApp Lite.
+      </div>
+    );
+  }
+
+  if (status === "connected") {
+    return (
+      <div className="space-y-2.5">
+        <div className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-sm text-green-300">
+          <CheckCircle2 className="size-4 shrink-0" />
+          <span>Conectado{phone ? ` — ${phone}` : ""}</span>
+        </div>
+        <Button type="button" variant="outline" size="sm" className="w-full gap-1.5" onClick={handleDisconnect} disabled={loading}>
+          {loading ? <Loader2 className="size-3.5 animate-spin" /> : <Unplug className="size-3.5" />}
+          Desconectar / Trocar número
+        </Button>
+      </div>
+    );
+  }
+
+  if (status === "qr_pending") {
+    return (
+      <div className="space-y-2.5">
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 p-4">
+          {qrDataUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={qrDataUrl} alt="QR Code do WhatsApp" className="size-56 rounded-md bg-white p-2" />
+          ) : (
+            <div className="flex size-56 items-center justify-center">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+          <p className="text-center text-xs text-muted-foreground">
+            Abra o WhatsApp no celular → Aparelhos conectados → Conectar um aparelho
+          </p>
+        </div>
+        <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => setStatus("disconnected")}>
+          Cancelar
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <Button type="button" variant="outline" size="sm" className="w-full gap-1.5" onClick={handleConnect} disabled={loading}>
+      {loading ? <Loader2 className="size-3.5 animate-spin" /> : <QrCode className="size-3.5" />}
+      Conectar
+    </Button>
   );
 }
 

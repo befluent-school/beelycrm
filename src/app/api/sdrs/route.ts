@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { eq } from "drizzle-orm";
 import { db as client, schema } from "@/db";
+import { stopSession } from "@/lib/wa-lite/session-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -54,8 +55,10 @@ export async function POST(request: Request) {
   // então "isNew" não pode ser inferido por "body.id presente" — precisa
   // checar se a linha já existe de verdade, senão webhookSecret nunca seria
   // gerado (toda chamada chegaria aqui com um id já preenchido).
-  const existingRows = await client.select({ id: schema.sdrs.id }).from(schema.sdrs).where(eq(schema.sdrs.id, id)).limit(1);
+  const existingRows = await client.select({ id: schema.sdrs.id, active: schema.sdrs.active, waProvider: schema.sdrs.waProvider })
+    .from(schema.sdrs).where(eq(schema.sdrs.id, id)).limit(1);
   const isNew = existingRows.length === 0;
+  const existing = existingRows[0];
 
   const row: Record<string, unknown> = {
     id,
@@ -97,6 +100,15 @@ export async function POST(request: Request) {
   } catch (e) {
     console.error("[api/sdrs] upsert falhou:", e);
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+  }
+
+  // SDR WA Lite desativado — desconecta a sessão do WhatsApp junto (decisão
+  // explícita: diferente de Z-API/Meta, aqui "inativo" também derruba a
+  // conexão real, exigindo novo QR Code se reativado depois).
+  const wasActive = existing?.active ?? true;
+  const isWaLite = (existing?.waProvider ?? body.waProvider) === "wa_lite";
+  if (!isNew && isWaLite && wasActive && body.active === false) {
+    void stopSession(id);
   }
 
   return NextResponse.json({ ok: true, id, webhookSecret });

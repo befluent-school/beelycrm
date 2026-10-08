@@ -15,6 +15,13 @@
       "when": 1791327321754,
       "tag": "0001_amazing_monster_badoon",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791465843437,
+      "tag": "0002_same_johnny_blaze",
+      "breakpoints": true
     }
   ]
 }

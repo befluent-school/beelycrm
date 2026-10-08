@@ -415,7 +415,7 @@ export const sdrs = pgTable("sdrs", {
   email: text("email"),
   avatarColor: text("avatar_color"),
   active: boolean("active").notNull().default(true),
-  waProvider: text("wa_provider"), // zapi | meta_cloud
+  waProvider: text("wa_provider"), // zapi | meta_cloud | wa_lite
   zapiInstanceId: text("zapi_instance_id"),
   zapiToken: text("zapi_token"),
   zapiClientToken: text("zapi_client_token"),
@@ -425,7 +425,27 @@ export const sdrs = pgTable("sdrs", {
   metaVerifyToken: text("meta_verify_token"),
   phoneDisplay: text("phone_display"),
   webhookSecret: text("webhook_secret"),
+  // WhatsApp Lite (Baileys, pareamento por QR Code) — status de exibição;
+  // as credenciais de sessão (chaves Signal) ficam em wa_lite_sessions,
+  // separadas por serem escritas com muito mais frequência.
+  waLiteStatus: text("wa_lite_status"), // disconnected | qr_pending | connected
+  waLiteConnectedPhone: text("wa_lite_connected_phone"),
+  waLiteLastConnectedAt: timestamp("wa_lite_last_connected_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+/**
+ * WhatsApp Lite (Baileys) — estado de autenticação por SDR, persistido para
+ * sobreviver a restart do PM2 (deploy, crash, OOM) sem exigir novo QR Code.
+ * `creds` muda raramente (só em re-pareamento); `keys` (pré-chaves do
+ * protocolo Signal) muda a quase toda mensagem — mantidos juntos numa linha
+ * por sdrId para simplicidade, mas em colunas separadas para granularidade.
+ */
+export const waLiteSessions = pgTable("wa_lite_sessions", {
+  sdrId: text("sdr_id").primaryKey().references(() => sdrs.id, { onDelete: "cascade" }),
+  creds: jsonb("creds").$type<Record<string, unknown>>(),
+  keys: jsonb("keys").$type<Record<string, Record<string, unknown>>>().default({}),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
 /* ─── Google Calendar (integração de agendamento) ───────── */

@@ -5,6 +5,7 @@
  */
 
 import type { Sdr } from "@/lib/store";
+import { getLiveSocket } from "@/lib/wa-lite/session-manager";
 
 export interface SendResult {
   ok: boolean;
@@ -13,7 +14,7 @@ export interface SendResult {
 }
 
 export interface WaProviderAdapter {
-  readonly name: "zapi" | "meta_cloud";
+  readonly name: "zapi" | "meta_cloud" | "wa_lite";
   send(sdr: Sdr, toPhone: string, text: string): Promise<SendResult>;
 }
 
@@ -81,6 +82,33 @@ export const metaCloudAdapter: WaProviderAdapter = {
   },
 };
 
+/**
+ * WhatsApp Lite (Baileys, pareamento por QR Code) — diferente dos outros
+ * dois adapters (stateless, uma chamada HTTP por envio), este depende do
+ * socket vivo em memória no processo atual (src/lib/wa-lite/session-manager.ts).
+ * Funciona hoje porque o Beely roda como 1 instância PM2 só — não escala
+ * horizontalmente sem replanejar esse acoplamento.
+ */
+export const waLiteAdapter: WaProviderAdapter = {
+  name: "wa_lite",
+  async send(sdr, toPhone, text) {
+    const sock = getLiveSocket(sdr.id);
+    if (!sock) {
+      return { ok: false, error: "Sessão WA Lite não está conectada. Reconecte em Configurações → SDRs." };
+    }
+    const phoneClean = toPhone.replace(/\D/g, "");
+    const jid = `${phoneClean}@s.whatsapp.net`;
+    try {
+      const result = await sock.sendMessage(jid, { text });
+      return { ok: true, providerMessageId: result?.key?.id ?? undefined };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+};
+
 export function getWaAdapter(sdr: Sdr): WaProviderAdapter {
-  return sdr.waProvider === "meta_cloud" ? metaCloudAdapter : zapiAdapter;
+  if (sdr.waProvider === "meta_cloud") return metaCloudAdapter;
+  if (sdr.waProvider === "wa_lite") return waLiteAdapter;
+  return zapiAdapter;
 }
