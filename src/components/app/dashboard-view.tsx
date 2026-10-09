@@ -82,7 +82,7 @@ export function DashboardView() {
 
     const acquisition: Kpi[] = [
       { label: "Novos leads no mês", value: String(newLeads), icon: UserPlus },
-      { label: "Custo por lead",     value: costPerLead > 0 ? formatCurrency(costPerLead) : "—", icon: Coins, hint: costPerLead > 0 ? undefined : "Configure marketing e leads/mês em Configurações" },
+      { label: "Custo por lead (manual)", value: costPerLead > 0 ? formatCurrency(costPerLead) : "—", icon: Coins, hint: costPerLead > 0 ? "Calculado a partir do gasto e meta mensal em Configurações → Financeiro" : "Configure marketing e leads/mês em Configurações" },
       { label: "Leads por mês (meta)", value: financialConfig.leadsPerMonth > 0 ? String(financialConfig.leadsPerMonth) : "—", icon: Target },
     ];
     const conversion: Kpi[] = [

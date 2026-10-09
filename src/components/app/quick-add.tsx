@@ -13,7 +13,7 @@ import { useStore, DEFAULT_OWNER } from "@/lib/store";
 export type QuickAddTab = "deal" | "contact" | "task" | "company";
 
 const TITLES: Record<QuickAddTab, string> = {
-  deal: "Novo lead / negócio",
+  deal: "Novo Lead",
   contact: "Novo contato",
   task: "Nova atividade",
   company: "Nova empresa",
@@ -24,15 +24,22 @@ export function QuickAdd({
   trigger,
   defaultPipelineId,
   defaultStageId,
+  open: openProp,
+  onOpenChange: onOpenChangeProp,
 }: {
   defaultTab?: QuickAddTab;
   trigger?: React.ReactNode;
   defaultPipelineId?: string;
   defaultStageId?: string;
+  /** Modo controlado opcional — quando ausente, o componente gerencia seu próprio open/close. */
+  open?: boolean;
+  onOpenChange?: (o: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
   const [tab, setTab] = useState<QuickAddTab>(defaultTab);
   const { pipelines, addDeal, addContact, addActivity, addCompany } = useStore();
+  const setOpen = onOpenChangeProp ?? setOpenState;
   const close = () => setOpen(false);
 
   // Reset tab when opening (in case user changed it last time)
@@ -41,15 +48,21 @@ export function QuickAdd({
     if (o) setTab(defaultTab);
   }
 
+  // Em modo controlado sem trigger próprio (abertura disparada de fora, ex.: menu de
+  // coluna do kanban), não renderiza nenhum botão — só o conteúdo do modal.
+  const hasOwnTrigger = openProp === undefined || trigger !== undefined;
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        {trigger ?? (
-          <Button size="sm" className="hidden sm:inline-flex">
-            <Plus className="size-4" /> Novo
-          </Button>
-        )}
-      </DialogTrigger>
+      {hasOwnTrigger && (
+        <DialogTrigger asChild>
+          {trigger ?? (
+            <Button size="sm" className="hidden sm:inline-flex">
+              <Plus className="size-4" /> Novo
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{TITLES[tab]}</DialogTitle>
@@ -75,11 +88,26 @@ export function QuickAdd({
                 const email = String(f.get("email") || "");
                 const phone = String(f.get("phone") || "");
 
+                // Campos de origem/campanha — vão pro Contact (já tem esses campos),
+                // visíveis dali no Deal via o contactId abaixo.
+                const utmSource = String(f.get("utmSource") || "") || undefined;
+                const utmMedium = String(f.get("utmMedium") || "") || undefined;
+                const utmCampaign = String(f.get("utmCampaign") || "") || undefined;
+                const utmTerm = String(f.get("utmTerm") || "") || undefined;
+                const utmContent = String(f.get("utmContent") || "") || undefined;
+                const adPlatform = String(f.get("adPlatform") || "") || undefined;
+                const campaignName = String(f.get("campaignName") || "") || undefined;
+
                 // Cria o contato junto (dedupe automático no store por nome/telefone/e-mail)
+                // — addContact sempre devolve o id (existente ou recém-criado), usado
+                // abaixo pra vincular o Deal de verdade (não só pelo nome em texto).
+                let contactId: string | undefined;
                 if (contactName && contactName !== "—") {
-                  addContact({
+                  contactId = addContact({
                     name: contactName, email, phone, company: "",
                     source: "Manual", score: 10, tags: [], owner: DEFAULT_OWNER,
+                    utmSource, utmMedium, utmCampaign, utmTerm, utmContent,
+                    metaPlatform: adPlatform, metaCampaignName: campaignName,
                   });
                 }
 
@@ -89,6 +117,7 @@ export function QuickAdd({
                   pipelineId: pipeline.id,
                   stageId,
                   contact: contactName,
+                  contactId,
                   owner: DEFAULT_OWNER,
                 });
                 toast.success("Lead criado no funil!");
@@ -270,6 +299,7 @@ function DealForm({
   const [pipelineId, setPipelineId] = useState(defaultPipelineId ?? pipelines[0]?.id ?? "");
   const pipeline = pipelines.find((p) => p.id === pipelineId) ?? pipelines[0];
   const [stageId, setStageId] = useState(defaultStageId ?? pipeline?.stages[0]?.id ?? "");
+  const [showOrigem, setShowOrigem] = useState(false);
 
   return (
     <form
@@ -307,6 +337,43 @@ function DealForm({
           {pipeline?.stages.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.probability}%</option>)}
         </select>
       </Field>
+
+      <div className="border-t border-border/60 pt-3">
+        <button
+          type="button"
+          onClick={() => setShowOrigem((v) => !v)}
+          className="text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          {showOrigem ? "▾" : "▸"} Origem da campanha (opcional)
+        </button>
+        {showOrigem && (
+          <div className="mt-3 space-y-2.5">
+            <Field label="Plataforma do anúncio">
+              <select
+                name="adPlatform"
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">—</option>
+                <option value="Meta">Meta (Facebook/Instagram)</option>
+                <option value="Google">Google</option>
+                <option value="TikTok">TikTok</option>
+                <option value="Outro">Outro</option>
+              </select>
+            </Field>
+            <Field label="Nome da campanha/anúncio"><Input name="campaignName" placeholder="Ex: Promoção Outubro" /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="UTM Source"><Input name="utmSource" placeholder="google, facebook..." /></Field>
+              <Field label="UTM Medium"><Input name="utmMedium" placeholder="cpc, social..." /></Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="UTM Campaign"><Input name="utmCampaign" placeholder="promo-outubro" /></Field>
+              <Field label="UTM Term"><Input name="utmTerm" placeholder="palavra-chave" /></Field>
+            </div>
+            <Field label="UTM Content"><Input name="utmContent" placeholder="variante do anúncio" /></Field>
+          </div>
+        )}
+      </div>
+
       <Button type="submit" className="w-full">Criar lead</Button>
     </form>
   );

@@ -11,56 +11,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { CopyField } from "./copy-field";
-import { ChannelConnect } from "./channel-connect";
-import { SdrConnect } from "./sdr-connect";
-import { Webhook, KeyRound, Plus, Trash2, RefreshCw, Eye, EyeOff, UserPlus, Mail, Shield, Crown, MoreHorizontal, Pencil, UserMinus, Check, MessageSquare } from "lucide-react";
+import { ConnectionsView } from "./connections-view";
+import { Webhook, KeyRound, Plus, Trash2, RefreshCw, Eye, EyeOff, UserPlus, Mail, Shield, Crown, MoreHorizontal, Pencil, UserMinus, Check } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
-/* ── Logos SVG oficiais dos canais ──────────────────────────── */
-function WhatsAppLogo({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 48 48" fill="none">
-      <rect width="48" height="48" rx="10" fill="#25D366"/>
-      <path d="M24 8C15.16 8 8 15.16 8 24c0 2.84.74 5.5 2.04 7.8L8 40l8.4-2.04A15.94 15.94 0 0024 40c8.84 0 16-7.16 16-16S32.84 8 24 8zm7.8 22.2c-.4 1-1.9 1.8-2.84 1.94-.76.12-1.72.16-2.78-.18-.64-.2-1.46-.48-2.5-.94-4.4-1.9-7.28-6.32-7.5-6.6-.2-.28-1.7-2.26-1.7-4.32s1.08-3.06 1.46-3.48c.4-.4.86-.5 1.14-.5h.82c.26 0 .62.1.94.72.34.66 1.16 2.82 1.26 3.02.1.2.18.44.04.7-.14.26-.2.42-.4.64-.2.22-.42.48-.6.64-.2.2-.4.4-.18.78.22.4 1 1.64 2.14 2.66 1.46 1.3 2.7 1.7 3.08 1.9.4.2.62.16.86-.1.22-.26 1-1.16 1.26-1.56.26-.4.52-.34.88-.2.36.14 2.28 1.08 2.68 1.26.4.2.66.28.76.44.1.2.1 1.1-.3 2.1z" fill="white"/>
-    </svg>
-  );
-}
-function InstagramLogo({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 48 48" fill="none">
-      <defs>
-        <radialGradient id="sigs-ig" cx="30%" cy="107%" r="150%">
-          <stop offset="0%" stopColor="#fdf497"/>
-          <stop offset="5%" stopColor="#fdf497"/>
-          <stop offset="45%" stopColor="#fd5949"/>
-          <stop offset="60%" stopColor="#d6249f"/>
-          <stop offset="90%" stopColor="#285AEB"/>
-        </radialGradient>
-      </defs>
-      <rect width="48" height="48" rx="10" fill="url(#sigs-ig)"/>
-      <rect x="14" y="14" width="20" height="20" rx="6" stroke="white" strokeWidth="2.5" fill="none"/>
-      <circle cx="24" cy="24" r="5" stroke="white" strokeWidth="2.5" fill="none"/>
-      <circle cx="30.5" cy="17.5" r="1.5" fill="white"/>
-    </svg>
-  );
-}
-function MessengerLogo({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 48 48" fill="none">
-      <defs>
-        <linearGradient id="sigs-msg" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#00B2FF"/>
-          <stop offset="100%" stopColor="#006AFF"/>
-        </linearGradient>
-      </defs>
-      <rect width="48" height="48" rx="10" fill="url(#sigs-msg)"/>
-      <path d="M24 10C16.27 10 10 15.9 10 23.2c0 4.18 2.08 7.9 5.34 10.38V38l4.84-2.66c1.28.36 2.66.56 4.08.56 7.73 0 14-5.9 14-13.2S31.73 10 24 10zm1.44 17.74l-3.56-3.8-6.94 3.8 7.64-8.1 3.64 3.8 6.86-3.8-7.64 8.1z" fill="white"/>
-    </svg>
-  );
-}
 import { PLANS } from "@/lib/site";
 import { formatCurrency, cn } from "@/lib/utils";
-import { useStore, useHydrated, type Sdr } from "@/lib/store";
+import { useStore } from "@/lib/store";
 import { DollarSign, TrendingUp, Users, BarChart2, HelpCircle } from "lucide-react";
 
 /* ── Tipos de perfil / membro ──────────────────────────────── */
@@ -319,12 +276,6 @@ const INITIAL_WEBHOOKS: WebhookDef[] = [
   { id: "wh2", url: "https://hooks.zapier.com/abc123",            events: ["message.received"],             active: false },
 ];
 
-const CHANNEL_DEFS = [
-  { name: "WhatsApp",         Logo: WhatsAppLogo,   type: "whatsapp"  as const, providers: "Meta Cloud API · Z-API · Evolution" },
-  { name: "Instagram Direct", Logo: InstagramLogo,  type: "instagram" as const, providers: "Instagram Graph API" },
-  { name: "Messenger",        Logo: MessengerLogo,  type: "messenger" as const, providers: "Meta Messenger API" },
-];
-
 /* ── Componente de chave gerada ─────────────────────────────── */
 function NewKeyBanner({ value, onDismiss }: { value: string; onDismiss: () => void }) {
   const [visible, setVisible] = useState(false);
@@ -384,19 +335,11 @@ const SEED_MEMBERS: TeamMember[] = [
 
 /* ── View principal ─────────────────────────────────────────── */
 export function SettingsView({ defaultTab = "geral" }: { defaultTab?: string }) {
-  const hydrated          = useHydrated();
-  const connectedChannels = useStore((s) => s.connectedChannels);
-  const sdrs               = useStore((s) => s.sdrs);
-
   const [apiKeys, setApiKeys]           = useState<ApiKey[]>(INITIAL_KEYS);
   const [newKey, setNewKey]             = useState<string | null>(null);
   const [generatingKey, setGenerating]  = useState(false);
   const [webhooks, setWebhooks]         = useState<WebhookDef[]>(INITIAL_WEBHOOKS);
   const [showNewWH, setShowNewWH]       = useState(false);
-
-  /* SDRs & WhatsApp */
-  const [sdrConnectOpen, setSdrConnectOpen] = useState(false);
-  const [editingSdr, setEditingSdr]         = useState<Sdr | null>(null);
 
   /* Equipe */
   const [members, setMembers]           = useState<TeamMember[]>(SEED_MEMBERS);
@@ -458,8 +401,7 @@ export function SettingsView({ defaultTab = "geral" }: { defaultTab?: string }) 
       <TabsList>
         <TabsTrigger value="geral">Geral</TabsTrigger>
         <TabsTrigger value="integracoes">Integrações</TabsTrigger>
-        <TabsTrigger value="canais">Canais</TabsTrigger>
-        <TabsTrigger value="sdrs">SDRs &amp; WhatsApp</TabsTrigger>
+        <TabsTrigger value="conexoes">Conexões</TabsTrigger>
         <TabsTrigger value="equipe">Equipe</TabsTrigger>
         <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
         <TabsTrigger value="planos">Planos</TabsTrigger>
@@ -512,6 +454,7 @@ export function SettingsView({ defaultTab = "geral" }: { defaultTab?: string }) 
               <span className="rounded-full bg-primary/15 px-3 py-1 text-sm font-bold text-primary">ATIVO</span>
             </CardContent>
           </Card>
+          <DbDiagnosticsCard />
         </div>
       </TabsContent>
 
@@ -603,101 +546,9 @@ export function SettingsView({ defaultTab = "geral" }: { defaultTab?: string }) 
         </Card>
       </TabsContent>
 
-      {/* ─── Canais ────────────────────────────────────────────── */}
-      <TabsContent value="canais">
-        <div className="mb-3">
-          <p className="text-sm text-muted-foreground">
-            Conecte seus canais de mensagem. Após emparelhamento, as conversas aparecerão no Inbox separadas por canal.
-          </p>
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          {CHANNEL_DEFS.map(({ name, Logo, type, providers }) => {
-            const connected = hydrated && connectedChannels.some((c) => c.type === type);
-            const ch        = connectedChannels.find((c) => c.type === type);
-            return (
-              <Card key={name} className={connected ? "border-success/30 bg-success/[0.03]" : ""}>
-                <CardContent className="p-5">
-                  <div className="flex items-center justify-between">
-                    <Logo className="size-11 rounded-xl" />
-                    {connected ? <Badge variant="success">Conectado</Badge> : <Badge variant="outline">Desconectado</Badge>}
-                  </div>
-                  <p className="mt-3 font-display font-semibold">{name}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{providers}</p>
-                  {connected && ch && (
-                    <p className="mt-1 text-[10px] text-success/80">via {ch.provider} · {new Date(ch.connectedAt).toLocaleDateString("pt-BR")}</p>
-                  )}
-                  <ChannelConnect
-                    channel={name}
-                    connected={connected}
-                    trigger={
-                      <Button variant={connected ? "outline" : "default"} size="sm" className="mt-4 w-full">
-                        {connected ? "Gerenciar" : "Conectar"}
-                      </Button>
-                    }
-                  />
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      </TabsContent>
-
-      {/* ─── SDRs & WhatsApp ───────────────────────────────────── */}
-      <TabsContent value="sdrs" className="space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Cada SDR atende pelo próprio número de WhatsApp Business (Z-API ou Meta Cloud API).
-            Conversas e leads aparecem no Inbox separados por SDR.
-          </p>
-          <Button size="sm" onClick={() => { setEditingSdr(null); setSdrConnectOpen(true); }}>
-            <Plus className="size-4" /> Novo SDR
-          </Button>
-        </div>
-
-        {hydrated && sdrs.length === 0 && (
-          <Card>
-            <CardContent className="flex flex-col items-center gap-2 p-8 text-center">
-              <MessageSquare className="size-8 text-muted-foreground" />
-              <p className="text-sm font-medium">Nenhum SDR cadastrado ainda</p>
-              <p className="text-xs text-muted-foreground">Adicione o primeiro SDR e conecte o WhatsApp Business dele.</p>
-            </CardContent>
-          </Card>
-        )}
-
-        <div className="grid gap-4 md:grid-cols-3">
-          {hydrated && sdrs.map((sdr) => (
-            <Card key={sdr.id} className={sdr.active ? "border-success/30 bg-success/[0.03]" : ""}>
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between">
-                  <span
-                    className="flex size-11 items-center justify-center rounded-xl text-sm font-semibold text-white"
-                    style={{ background: sdr.avatarColor || "#E59313" }}
-                  >
-                    {sdr.name.slice(0, 1).toUpperCase()}
-                  </span>
-                  <Badge variant={sdr.active ? "success" : "outline"}>{sdr.active ? "Ativo" : "Pausado"}</Badge>
-                </div>
-                <p className="mt-3 font-display font-semibold">{sdr.name}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{sdr.phoneDisplay || "Sem número exibido"}</p>
-                <p className="mt-1 text-[10px] text-muted-foreground">
-                  {sdr.waProvider === "meta_cloud"
-                    ? (sdr.metaPhoneNumberId ? "Meta Cloud API conectada" : "Meta Cloud API — pendente")
-                    : (sdr.zapiInstanceId ? "Z-API conectada" : "Z-API — pendente")}
-                </p>
-                <Button
-                  variant="outline" size="sm" className="mt-4 w-full"
-                  onClick={() => { setEditingSdr(sdr); setSdrConnectOpen(true); }}
-                >
-                  Gerenciar
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        <SdrConnect key={editingSdr?.id ?? "new"} sdr={editingSdr} open={sdrConnectOpen} onOpenChange={setSdrConnectOpen} />
-
-        <DbDiagnosticsCard />
+      {/* ─── Conexões (WhatsApp por SDR + Instagram + Messenger) ── */}
+      <TabsContent value="conexoes">
+        <ConnectionsView />
       </TabsContent>
 
       {/* ─── Equipe ────────────────────────────────────────────── */}

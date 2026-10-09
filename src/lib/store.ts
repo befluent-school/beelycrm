@@ -334,7 +334,8 @@ export interface StoreState {
   deleteDeal: (dealId: string) => void;
 
   // contacts & activities
-  addContact: (c: Omit<Contact, "id">) => void;
+  /** Cria o contato (ou reusa um já existente pela chave de dedupe) e retorna o id resultante. */
+  addContact: (c: Omit<Contact, "id">) => string;
   addContacts: (cs: Omit<Contact, "id">[]) => void;
   updateContact: (id: string, patch: Partial<Contact>) => void;
   deleteContact: (id: string) => void;
@@ -595,9 +596,15 @@ export const useStore = create<StoreState>()(
       addContact: (c) => {
         const key = dedupeKey(c);
         let newContact: Contact | null = null;
+        let resultId = "";
         set((s) => {
-          if (s.contacts.some((ex) => dedupeKey(ex) === key)) return s;
+          const existing = s.contacts.find((ex) => dedupeKey(ex) === key);
+          if (existing) {
+            resultId = existing.id;
+            return s;
+          }
           newContact = { ...c, id: uid() };
+          resultId = newContact.id;
           return { contacts: [newContact, ...s.contacts] };
         });
         if (newContact) {
@@ -606,6 +613,7 @@ export const useStore = create<StoreState>()(
             runAutomations({ type: "contact_created" }, { contact: newContact! }, get())
           );
         }
+        return resultId;
       },
       addContacts: (cs) => {
         let newOnes: Contact[] = [];

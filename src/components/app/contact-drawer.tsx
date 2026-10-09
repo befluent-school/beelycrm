@@ -11,6 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useStore, type Contact } from "@/lib/store";
 import { initials, cn } from "@/lib/utils";
 import { TransferLeadDialog } from "@/components/app/transfer-lead-dialog";
+import { F2, Section } from "@/components/app/field-kit";
 import { Phone, Mail, MessageCircle, Trash2, X, MapPin, Briefcase, BarChart2, Megaphone, UserCog } from "lucide-react";
 
 export function ContactDrawer({ contactId, onClose }: { contactId: string | null; onClose: () => void }) {
@@ -428,24 +429,6 @@ function ContactDrawerInner({ contact, onClose }: { contact: Contact; onClose: (
 }
 
 /* ── Helpers de UI ────────────────────────────────────────────── */
-function F2({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="space-y-1">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Input value={value} onChange={(e) => onChange(e.target.value)} className="h-8 text-sm" />
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-2">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
-      {children}
-    </div>
-  );
-}
-
 function Quick({ icon: Icon, label, href }: { icon: React.ComponentType<{ className?: string }>; label: string; href: string }) {
   return (
     <a href={href} target="_blank" rel="noreferrer" className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-white/[0.03] py-2 text-xs font-medium transition-colors hover:border-primary/40 hover:text-primary">

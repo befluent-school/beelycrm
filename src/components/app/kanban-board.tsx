@@ -23,7 +23,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { toast } from "sonner";
-import { useStore, useHydrated, DEFAULT_OWNER, type Deal, type Stage, dealTemperature } from "@/lib/store";
+import { useStore, useHydrated, type Deal, type Stage, dealTemperature } from "@/lib/store";
 import { isStale } from "@/lib/pipeline-alerts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,12 +31,10 @@ import { Input } from "@/components/ui/input";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { DealDrawer } from "./deal-drawer";
 import { QuickAdd } from "./quick-add";
 import { formatCurrency, cn } from "@/lib/utils";
-import { GripVertical, Plus, MoreVertical, Trophy, XCircle, Trash2, Check, Flame, Thermometer, Snowflake, UserPlus, AlertTriangle } from "lucide-react";
+import { GripVertical, Plus, MoreVertical, Trophy, XCircle, Trash2, Flame, Thermometer, Snowflake, UserPlus, AlertTriangle } from "lucide-react";
 
 /* ── Temperatura do lead ─────────────────────────────────────── */
 const TEMP_CFG = {
@@ -173,11 +171,9 @@ export function KanbanBoard() {
           <Button variant="outline" size="sm" onClick={() => setNewFunnel(true)}><Plus className="size-4" /> Novo funil</Button>
         )}
 
-        <QuickAdd
-          defaultTab="deal"
-          defaultPipelineId={pipeline.id}
-          trigger={<Button size="sm"><UserPlus className="size-4" /> Novo lead</Button>}
-        />
+        <Button size="sm" onClick={() => setAddDealStage(pipeline.stages[0]?.id ?? "")}>
+          <UserPlus className="size-4" /> Novo lead
+        </Button>
 
         {/* Legenda de temperatura */}
         <div className="flex w-full items-center gap-3 text-[10px] text-muted-foreground sm:ml-auto sm:w-auto">
@@ -230,7 +226,13 @@ export function KanbanBoard() {
         </DragOverlay>
       </DndContext>
 
-      <AddDealDialog pipelineId={pipeline.id} stageId={addDealStage} onClose={() => setAddDealStage(null)} />
+      <QuickAdd
+        defaultTab="deal"
+        defaultPipelineId={pipeline.id}
+        defaultStageId={addDealStage ?? undefined}
+        open={Boolean(addDealStage)}
+        onOpenChange={(o) => { if (!o) setAddDealStage(null); }}
+      />
       <DealDrawer dealId={openDealId} onClose={() => setOpenDealId(null)} />
     </div>
   );
@@ -285,7 +287,7 @@ function SortableColumn({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => setRenaming(true)}>Renomear etapa</DropdownMenuItem>
-            <DropdownMenuItem onClick={onAddDeal}>Adicionar negócio</DropdownMenuItem>
+            <DropdownMenuItem onClick={onAddDeal}>Adicionar Lead</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-destructive" onClick={onDelete}>Excluir etapa</DropdownMenuItem>
           </DropdownMenuContent>
@@ -306,7 +308,7 @@ function SortableColumn({
       >
         {children}
         <button onClick={onAddDeal} className="mt-1 flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/70 py-2 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary">
-          <Plus className="size-3.5" /> Adicionar negócio
+          <Plus className="size-3.5" /> Adicionar Lead
         </button>
       </div>
     </div>
@@ -408,41 +410,5 @@ function DealCardView({
         </div>
       </div>
     </div>
-  );
-}
-
-/* ── Modal novo negócio ─────────────────────────────────────────── */
-function AddDealDialog({ pipelineId, stageId, onClose }: { pipelineId: string; stageId: string | null; onClose: () => void }) {
-  const addDeal = useStore((s) => s.addDeal);
-  return (
-    <Dialog open={Boolean(stageId)} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Novo negócio</DialogTitle></DialogHeader>
-        <form
-          className="space-y-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const f = new FormData(e.currentTarget);
-            addDeal({
-              title:      String(f.get("title")),
-              value:      Number(f.get("value") || 0),
-              pipelineId,
-              stageId:    stageId!,
-              contact:    String(f.get("contact") || "—"),
-              owner:      DEFAULT_OWNER,
-            });
-            toast.success("Negócio adicionado à etapa!");
-            onClose();
-          }}
-        >
-          <div className="space-y-1.5"><Label>Título</Label><Input name="title" required autoFocus placeholder="Ex: Plano anual - Empresa X" /></div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5"><Label>Valor (R$)</Label><Input name="value" type="number" min="0" step="0.01" placeholder="0,00" /></div>
-            <div className="space-y-1.5"><Label>Contato</Label><Input name="contact" placeholder="Nome" /></div>
-          </div>
-          <Button type="submit" className="w-full"><Check className="size-4" /> Adicionar</Button>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

@@ -12,6 +12,7 @@ import { useStore, type Deal, type Contact, dealTemperature, isBantQualified } f
 import { slaMinutes, formatMinutes } from "@/lib/sla";
 import { formatCurrency, formatDate, initials, cn } from "@/lib/utils";
 import { TransferLeadDialog } from "@/components/app/transfer-lead-dialog";
+import { F2, Section } from "@/components/app/field-kit";
 import {
   Trophy, XCircle, Phone, Mail, MessageCircle,
   Plus, Check, Clock, X, Save, Trash2, Flame, Thermometer, Snowflake,
@@ -96,6 +97,28 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
   const selectedPipeline = pipelines.find((p) => p.id === form.pipelineId) ?? pipelines[0];
   const stage            = selectedPipeline?.stages.find((s) => s.id === form.stageId);
   const linkedContact    = contacts.find((c) => c.name === deal.contact || c.id === deal.contactId);
+
+  // Origem/campanha — edita campos do Contact vinculado (não existem no Deal,
+  // ver store.ts Contact) direto a partir do Deal, sem precisar abrir o
+  // Contact drawer separado.
+  const [origemForm, setOrigemForm] = useState({
+    metaPlatform:     linkedContact?.metaPlatform ?? "",
+    metaCampaignName: linkedContact?.metaCampaignName ?? "",
+    metaAdName:       linkedContact?.metaAdName ?? "",
+    utmSource:        linkedContact?.utmSource ?? "",
+    utmMedium:        linkedContact?.utmMedium ?? "",
+    utmCampaign:      linkedContact?.utmCampaign ?? "",
+    utmTerm:          linkedContact?.utmTerm ?? "",
+    utmContent:       linkedContact?.utmContent ?? "",
+  });
+  function saveOrigem() {
+    if (!linkedContact) return;
+    updateContact(linkedContact.id, origemForm);
+    toast.success("Origem da campanha atualizada.");
+  }
+  function oField(key: keyof typeof origemForm) {
+    return (v: string) => setOrigemForm((f) => ({ ...f, [key]: v }));
+  }
   const dealActivities   = activities.filter((a) => a.dealId === deal.id || a.contact === deal.contact);
   const isClosed         = deal.status !== "open";
   const temp             = dealTemperature(deal);
@@ -402,6 +425,28 @@ function DealDrawerInner({ deal, onClose }: { deal: Deal; onClose: () => void })
               )}
 
               <Button onClick={save} className="w-full"><Save className="size-4" /> Salvar alteracoes</Button>
+
+              {linkedContact && (
+                <div className="space-y-3 border-t border-border/60 pt-4">
+                  <Section title="Origem">
+                    <div className="grid grid-cols-2 gap-2">
+                      <F2 label="Plataforma do anúncio" value={origemForm.metaPlatform} onChange={oField("metaPlatform")} />
+                      <F2 label="Nome da campanha" value={origemForm.metaCampaignName} onChange={oField("metaCampaignName")} />
+                      <F2 label="Nome do anúncio" value={origemForm.metaAdName} onChange={oField("metaAdName")} />
+                    </div>
+                  </Section>
+                  <Section title="UTM">
+                    <div className="grid grid-cols-2 gap-2">
+                      <F2 label="Source" value={origemForm.utmSource} onChange={oField("utmSource")} />
+                      <F2 label="Medium" value={origemForm.utmMedium} onChange={oField("utmMedium")} />
+                      <F2 label="Campaign" value={origemForm.utmCampaign} onChange={oField("utmCampaign")} />
+                      <F2 label="Term" value={origemForm.utmTerm} onChange={oField("utmTerm")} />
+                      <div className="col-span-2"><F2 label="Content" value={origemForm.utmContent} onChange={oField("utmContent")} /></div>
+                    </div>
+                  </Section>
+                  <Button onClick={saveOrigem} variant="outline" className="w-full">Salvar origem</Button>
+                </div>
+              )}
             </TabsContent>
 
             {/* ── QUALIFICAÇÃO / DIAGNÓSTICO (Playbook Comercial Be Fluent v3) ── */}
