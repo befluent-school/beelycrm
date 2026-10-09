@@ -34,7 +34,16 @@ interface ManagedSession {
   manualDisconnect: boolean;
 }
 
-const sessions = new Map<string, ManagedSession>();
+// globalThis, não um `Map` de módulo — Next.js (App Router/Turbopack)
+// compila cada route.ts como entrypoint próprio; um `const` de módulo
+// pode acabar instanciado uma vez por entrypoint em vez de compartilhado
+// entre rotas, o que quebrava silenciosamente este singleton (confirmado
+// em produção: a sessão conectava de verdade, visível nos logs do
+// Baileys, mas /api/sdrs/wa-lite/status lia um Map vazio diferente).
+// globalThis é o único objeto garantidamente compartilhado entre todos os
+// entrypoints dentro do mesmo processo Node.
+const globalForWaLite = globalThis as unknown as { __waLiteSessions?: Map<string, ManagedSession> };
+const sessions = globalForWaLite.__waLiteSessions ?? (globalForWaLite.__waLiteSessions = new Map<string, ManagedSession>());
 
 function getOrCreate(sdrId: string): ManagedSession {
   let s = sessions.get(sdrId);
