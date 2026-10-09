@@ -5,7 +5,10 @@
  * evento interno de um socket vivo, sem payload HTTP nenhum. pushMessage()
  * já é 100% agnóstico de provider, não precisa de nenhuma mudança lá.
  */
-import type { WAMessage } from "@whiskeysockets/baileys";
+import {
+  normalizeMessageContent, isJidBroadcast, isJidGroup, isJidNewsletter, isJidStatusBroadcast,
+  type WAMessage,
+} from "@whiskeysockets/baileys";
 import { pushMessage } from "@/lib/message-store";
 
 function jidToPhone(jid: string | null | undefined): string {
@@ -13,7 +16,11 @@ function jidToPhone(jid: string | null | undefined): string {
   return jid.replace(/@s\.whatsapp\.net$|@lid$/, "").replace(/\D/g, "");
 }
 
-function extractText(message: WAMessage["message"]): string {
+function extractText(rawMessage: WAMessage["message"]): string {
+  // normalizeMessageContent desembrulha ephemeralMessage/viewOnceMessage
+  // (comuns em conversas reais do WhatsApp moderno) — sem isso, o texto
+  // real fica um nível mais fundo e extractText nunca encontrava nada.
+  const message = normalizeMessageContent(rawMessage);
   if (!message) return "";
   return (
     message.conversation ??
@@ -25,7 +32,8 @@ function extractText(message: WAMessage["message"]): string {
   );
 }
 
-function extractMsgType(message: WAMessage["message"]): "text" | "image" | "audio" | "document" | "video" {
+function extractMsgType(rawMessage: WAMessage["message"]): "text" | "image" | "audio" | "document" | "video" {
+  const message = normalizeMessageContent(rawMessage);
   if (!message) return "text";
   if (message.imageMessage) return "image";
   if (message.audioMessage) return "audio";
@@ -37,11 +45,16 @@ function extractMsgType(message: WAMessage["message"]): "text" | "image" | "audi
 export async function ingestBaileysMessage(sdrId: string, msg: WAMessage): Promise<void> {
   // Mensagens de sistema/protocolo (sem conteúdo real) — ignora.
   if (!msg.message) return;
-  // Mensagens de grupo não são tratadas pelo Inbox hoje (foco 1:1 com leads).
-  if (msg.key.remoteJid?.endsWith("@g.us")) return;
 
-  const isLid = !!msg.key.remoteJid?.endsWith("@lid");
-  const phone = jidToPhone(msg.key.remoteJid);
+  const jid = msg.key.remoteJid;
+  // Só conversas 1:1 reais — grupo, status (stories), listas de transmissão
+  // e newsletters não são tratados pelo Inbox hoje (foco 1:1 com leads), e
+  // sem esse filtro o JID de status ("status@broadcast") virava um
+  // "contato" com número sem sentido no Inbox.
+  if (!jid || isJidGroup(jid) || isJidBroadcast(jid) || isJidStatusBroadcast(jid) || isJidNewsletter(jid)) return;
+
+  const isLid = !!jid.endsWith("@lid");
+  const phone = jidToPhone(jid);
   if (!phone) return;
 
   await pushMessage({

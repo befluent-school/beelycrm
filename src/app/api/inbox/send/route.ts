@@ -77,20 +77,27 @@ export async function POST(request: Request) {
     }
   }
 
-  /* ── Persiste no Supabase como fromMe=true ──────────────── */
+  /* ── Persiste como fromMe=true ────────────────────────────
+   * WA Lite é exceção: o próprio socket Baileys dispara messages.upsert
+   * (fromMe: true) pra mensagem que ACABAMOS de enviar por ele — gravar
+   * aqui também duplicava toda mensagem enviada (ver ingest.ts). Pros
+   * outros providers (Z-API/Meta), que não têm esse eco automático
+   * confiável, mantém o comportamento de sempre gravar aqui. */
   const ts = Date.now();
   const threadKey = sdrId ? `${sdrId}:${phoneClean}` : phoneClean;
-  const saved = await pushMessage({
-    channel:   "whatsapp",
-    from:      phoneClean,
-    fromName:  contactName ?? phoneClean,
-    text,
-    timestamp: ts,
-    fromMe:    true,
-    msgType:   "text",
-    sdrId,
-    threadKey,
-  });
+  const saved = providerName === "wa_lite"
+    ? { channel: "whatsapp" as const, from: phoneClean, fromName: contactName ?? phoneClean, text, timestamp: ts, fromMe: true, msgType: "text" as const, sdrId, threadKey, id: `pending-${ts}` }
+    : await pushMessage({
+        channel:   "whatsapp",
+        from:      phoneClean,
+        fromName:  contactName ?? phoneClean,
+        text,
+        timestamp: ts,
+        fromMe:    true,
+        msgType:   "text",
+        sdrId,
+        threadKey,
+      });
 
   return NextResponse.json({
     ok: true,
