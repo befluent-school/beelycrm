@@ -135,12 +135,11 @@ export async function handleWhatsApp(payload: unknown, sdr?: Sdr | null) {
 
   /* ── Z-API v2 (envelope "value") ── */
   if (p.value?.phone) {
-    if (p.value.fromMe) return;
     const phone = p.value.phone;
     const name = p.value.senderName ?? phone;
     const ts = p.value.momment ?? Date.now();
+    const fromMe = p.value.fromMe ?? false;
 
-    // v2 agora parseia mídia também
     let msgType: "text" | "image" | "audio" | "document" | "video" = "text";
     let text = "(mensagem)";
     let mediaUrl: string | undefined;
@@ -153,12 +152,25 @@ export async function handleWhatsApp(payload: unknown, sdr?: Sdr | null) {
     else if (p.value.video) { msgType = "video"; mediaUrl = p.value.video.videoUrl; mediaCaption = p.value.video.caption; text = p.value.video.caption ?? "[Vídeo]"; }
     else if (p.value.document) { msgType = "document"; mediaUrl = p.value.document.documentUrl; fileName = p.value.document.fileName; text = `[Documento: ${p.value.document.fileName ?? "arquivo"}]`; }
 
+    if (fromMe) {
+      // Deduplicação: eco de mensagem já enviada pelo sistema
+      const isDup =
+        msgType === "text"
+          ? await wasRecentlySentByUs(text)
+          : mediaUrl ? await wasRecentlySentByUs(mediaUrl) : false;
+      if (isDup) {
+        console.log("[WhatsApp/Z-API v2] eco já enviado pelo sistema — ignorado");
+        return;
+      }
+      // Mensagem enviada pelo celular (não pelo sistema) — persiste
+    }
+
     await pushMessage({
       channel: "whatsapp", from: phone, fromName: name,
       text, timestamp: typeof ts === "number" && ts > 1e12 ? ts : ts * 1000,
-      msgType, mediaUrl, mediaCaption, fileName, sdrId, raw: payload,
+      fromMe, msgType, mediaUrl, mediaCaption, fileName, sdrId, raw: payload,
     });
-    void exitFollowupOnReply(phone);
+    if (!fromMe) void exitFollowupOnReply(phone);
     return;
   }
 
@@ -185,10 +197,12 @@ export async function handleWhatsApp(payload: unknown, sdr?: Sdr | null) {
           else if (msg.document) { msgType = "document"; mediaUrl = msg.document.link; fileName = msg.document.filename; text = `[Documento: ${msg.document.filename ?? "arquivo"}]`; }
           else if (msg.sticker) { msgType = "image"; mediaUrl = (msg.sticker as { link?: string }).link; text = "[Sticker]"; }
 
+          // stableId usando msg.id da Meta — evita duplicatas em reentregas do webhook
+          const stableId = sdrId ? `meta-${sdrId}-${msg.id}` : `meta-${msg.id}`;
           await pushMessage({
             channel: "whatsapp", from: msg.from, fromName: contactName ?? msg.from,
             text, timestamp: ts, fromMe: false,
-            msgType, mediaUrl, mediaCaption, fileName, sdrId, raw: payload,
+            msgType, mediaUrl, mediaCaption, fileName, sdrId, stableId, raw: payload,
           });
           void exitFollowupOnReply(msg.from);
         }

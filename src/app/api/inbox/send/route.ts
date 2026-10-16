@@ -47,6 +47,7 @@ export async function POST(request: Request) {
   let sendOk = false;
   let sendError = "";
   let providerName: "zapi" | "meta_cloud" | "wa_lite" | "legacy" = "legacy";
+  let providerMessageId: string | undefined;
 
   if (sdrId) {
     const sdr = await fetchSdrWithSecrets(sdrId);
@@ -55,14 +56,12 @@ export async function POST(request: Request) {
     } else {
       const adapter = getWaAdapter(sdr);
       providerName = adapter.name;
-      let res;
-      if (isMedia) {
-        res = await adapter.sendMedia(sdr, phoneClean, { mediaUrl: mediaUrl!, mediaType: mediaType!, fileName, caption });
-      } else {
-        res = await adapter.send(sdr, phoneClean, text!);
-      }
+      const res = isMedia
+        ? await adapter.sendMedia(sdr, phoneClean, { mediaUrl: mediaUrl!, mediaType: mediaType!, fileName, caption })
+        : await adapter.send(sdr, phoneClean, text!);
       sendOk = res.ok;
       sendError = res.error ?? "";
+      providerMessageId = res.providerMessageId;
     }
   } else {
     /* ── Comportamento legado: env vars globais (Z-API, texto apenas) ── */
@@ -91,17 +90,27 @@ export async function POST(request: Request) {
     }
   }
 
-  /* ── Persiste como fromMe=true ──────────────────────────────
-   * WA Lite é exceção: o socket Baileys dispara messages.upsert (fromMe:true)
-   * automaticamente para a mensagem que acabamos de enviar — gravar aqui
-   * duplicaria. Para os demais providers (Z-API / Meta), que não têm esse
-   * eco confiável, mantemos o registro imediato aqui.
-   * Além disso, adicionamos a mensagem diretamente ao state do cliente via
-   * campo `msg` na resposta para UI otimista instantânea. */
+  /* ── Persiste como fromMe=true ─────────────────────────────────────────
+   * Todos os providers persistem imediatamente aqui.
+   *
+   * WA Lite: o Baileys dispara messages.upsert (fromMe=true) como eco da
+   * mensagem enviada. Usamos stableId = "wa-{sdrId}-{key.id}" — o mesmo
+   * id que o eco usará — para que onConflictDoNothing descarte o eco
+   * silenciosamente, sem duplicata.
+   *
+   * Z-API / Meta Cloud: não têm eco confiável — este registro é definitivo.
+   */
   const ts = Date.now();
   const threadKey = sdrId ? `${sdrId}:${phoneClean}` : phoneClean;
-  const msgBase = {
-    channel: "whatsapp" as const,
+
+  // WA Lite: stableId = wa-{sdrId}-{key.id} (providerMessageId = key.id retornado pelo Baileys)
+  const stableId =
+    providerName === "wa_lite" && sdrId && providerMessageId
+      ? `wa-${sdrId}-${providerMessageId}`
+      : undefined;
+
+  const saved = await pushMessage({
+    channel: "whatsapp",
     from: phoneClean,
     fromName: contactName ?? phoneClean,
     text: isMedia ? (caption ?? `[${mediaType}]`) : text!,
@@ -113,12 +122,8 @@ export async function POST(request: Request) {
     fileName: isMedia ? fileName : undefined,
     sdrId,
     threadKey,
-  };
-
-  const saved =
-    providerName === "wa_lite"
-      ? { ...msgBase, id: `pending-${ts}` }
-      : await pushMessage(msgBase);
+    stableId,
+  });
 
   return NextResponse.json({ ok: true, provider: providerName, sendOk, sendError: sendError || undefined, ts, msg: saved });
 }

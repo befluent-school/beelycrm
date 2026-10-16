@@ -65,7 +65,8 @@ function ContactAvatar({ name, photo, size = "size-9" }: { name: string; photo?:
   );
 }
 
-const POLL_MS = 3000;
+// Polling de fallback — SSE é o canal primário para tempo real
+const POLL_MS = 5000;
 
 /** Modo de filtro por data da conversa. */
 type DateFilterMode = "lastMsg" | "firstMsg";
@@ -181,7 +182,15 @@ export function InboxView() {
         setMessages((prev) => {
           // em filtro server-side por data: substitui completamente
           const merged = (initial || hasDateFilter) ? data : [...prev, ...data];
-          const byId = new Map(merged.map((m) => [m.id, m]));
+          // Remove mensagens otimistas cujo timestamp já foi coberto pelo poll
+          // (a versão real chegou no banco — o opt- fica órfão)
+          const maxRealTs = data.length > 0 ? Math.max(...data.map((m) => m.timestamp)) : 0;
+          const filtered = merged.filter((m) => {
+            if (!m.id.startsWith("opt-")) return true;
+            // Mantém otimista apenas se ainda mais recente que o último poll
+            return m.timestamp > maxRealTs;
+          });
+          const byId = new Map(filtered.map((m) => [m.id, m]));
           return [...byId.values()].sort((a, b) => a.timestamp - b.timestamp);
         });
         if (data.length > 0 && !hasDateFilter) {
@@ -208,6 +217,7 @@ export function InboxView() {
   const loadRef = useRef(load);
   useEffect(() => { loadRef.current = load; }, [load]);
 
+  // Recarrega ao mudar filtro de data (resetando o cursor incremental)
   useEffect(() => {
     sinceRef.current = 0;
     setLoading(true);
@@ -215,8 +225,54 @@ export function InboxView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateRange, dateFilterMode]);
 
+  // SSE — recebe mensagens em tempo real sem polling
   useEffect(() => {
-    loadRef.current(true);
+    if (typeof EventSource === "undefined") return; // SSR guard
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = () => {
+      const url = `/api/inbox/events?since=${sinceRef.current}`;
+      es = new EventSource(url);
+
+      es.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data) as InboxMessage;
+          if (!msg?.id) return;
+          setMessages((prev) => {
+            const byId = new Map(prev.map((m) => [m.id, m]));
+            byId.set(msg.id, msg);
+            // Remove otimista correspondente (mesmo thread + fromMe + timestamp próximo)
+            for (const [k, m] of byId) {
+              if (k.startsWith("opt-") && m.threadKey === msg.threadKey && m.fromMe === msg.fromMe &&
+                  Math.abs(m.timestamp - msg.timestamp) < 10_000) {
+                byId.delete(k);
+                break;
+              }
+            }
+            return [...byId.values()].sort((a, b) => a.timestamp - b.timestamp);
+          });
+          if (msg.timestamp > sinceRef.current) sinceRef.current = msg.timestamp;
+        } catch { /* JSON inválido */ }
+      };
+
+      es.onerror = () => {
+        es?.close();
+        es = null;
+        // Reconecta após 3s em caso de queda
+        reconnectTimer = setTimeout(connect, 3000);
+      };
+    };
+
+    connect();
+    return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      es?.close();
+    };
+  }, []);
+
+  // Polling de fallback — garante consistência mesmo se SSE falhar
+  useEffect(() => {
     const id = setInterval(() => loadRef.current(false), POLL_MS);
     return () => clearInterval(id);
   }, []);

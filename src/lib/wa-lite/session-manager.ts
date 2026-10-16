@@ -284,9 +284,10 @@ export async function stopSession(sdrId: string): Promise<void> {
   session.state = "disconnected";
   session.lastQr = null;
   session.connectedPhone = null;
+  // persistStatus antes de clear() — evita estado "connected" no banco sem sessão
+  await persistStatus(sdrId, "disconnected", null, false);
   const { clear } = await usePostgresAuthState(sdrId);
   await clear();
-  await persistStatus(sdrId, "disconnected", null, false);
 }
 
 /**

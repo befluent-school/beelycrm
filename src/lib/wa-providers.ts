@@ -69,7 +69,7 @@ export const zapiAdapter: WaProviderAdapter = {
       image:    "send-image",
       audio:    "send-audio",
       video:    "send-video",
-      document: "send-document/mp4",
+      document: "send-document",
     };
     const endpoint = endpointMap[mediaType] ?? "send-image";
     const bodyMap: Record<MediaType, Record<string, unknown>> = {
