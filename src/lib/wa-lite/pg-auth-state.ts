@@ -42,6 +42,7 @@ export async function usePostgresAuthState(sdrId: string) {
 
   // Debounce das escritas de `keys` — rotaciona a quase toda mensagem,
   // martelar o Postgres a cada rotação de pré-chave seria desperdício.
+  // Janela de 3s: balanceia entre perda mínima de chaves e carga no DB.
   // `creds` muda raro (só em re-pareamento) e é gravado na hora.
   let keysFlushTimer: ReturnType<typeof setTimeout> | null = null;
   const flushKeys = async () => {
@@ -56,7 +57,8 @@ export async function usePostgresAuthState(sdrId: string) {
   };
   const scheduleKeysFlush = () => {
     if (keysFlushTimer) clearTimeout(keysFlushTimer);
-    keysFlushTimer = setTimeout(() => void flushKeys(), 1000);
+    // 3s de debounce — reduz risco de perda de chaves se o processo morrer
+    keysFlushTimer = setTimeout(() => void flushKeys(), 3000);
   };
 
   const saveCreds = async () => {

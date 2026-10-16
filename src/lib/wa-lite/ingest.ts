@@ -7,7 +7,6 @@
  */
 import {
   normalizeMessageContent, isJidBroadcast, isJidGroup, isJidNewsletter, isJidStatusBroadcast,
-  downloadMediaMessage,
   type WAMessage,
 } from "@whiskeysockets/baileys";
 import { pushMessage } from "@/lib/message-store";
@@ -15,20 +14,6 @@ import { pushMessage } from "@/lib/message-store";
 function jidToPhone(jid: string | null | undefined): string {
   if (!jid) return "";
   return jid.replace(/@s\.whatsapp\.net$|@lid$/, "").replace(/\D/g, "");
-}
-
-function extractText(rawMessage: WAMessage["message"]): string {
-  const message = normalizeMessageContent(rawMessage);
-  if (!message) return "";
-  return (
-    message.conversation ??
-    message.extendedTextMessage?.text ??
-    message.imageMessage?.caption ??
-    message.videoMessage?.caption ??
-    message.documentMessage?.caption ??
-    (message.audioMessage ? "[Áudio]" : undefined) ??
-    ""
-  );
 }
 
 type MsgType = "text" | "image" | "audio" | "document" | "video";
@@ -39,11 +24,40 @@ interface MediaInfo {
   mediaUrl?: string;
   mediaCaption?: string;
   fileName?: string;
+  /** true = esta mensagem não deve ser persistida (protocolo interno, reação, etc.) */
+  skip?: boolean;
 }
 
+/**
+ * Extrai conteúdo de qualquer tipo de mensagem do Baileys, incluindo
+ * wrappers como ephemeralMessage, viewOnceMessage e editedMessage.
+ * Mensagens de protocolo interno (revogação, reação, etc.) retornam skip=true.
+ */
 function extractMedia(rawMessage: WAMessage["message"]): MediaInfo {
+  // normalizeMessageContent desempacota viewOnce, ephemeral, documentWithCaption, etc.
   const message = normalizeMessageContent(rawMessage);
-  if (!message) return { msgType: "text", text: "" };
+  if (!message) return { msgType: "text", text: "", skip: true };
+
+  // Mensagens de protocolo interno — não têm conteúdo visível para o usuário
+  if (
+    message.protocolMessage ||
+    message.reactionMessage ||
+    message.keepInChatMessage ||
+    message.pollUpdateMessage
+  ) {
+    return { msgType: "text", text: "", skip: true };
+  }
+
+  // Mensagem editada — pega o conteúdo da edição
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const edited = (message as any).editedMessage?.message;
+  if (edited) {
+    const inner = normalizeMessageContent(edited);
+    if (inner) {
+      const editedText = inner.conversation ?? inner.extendedTextMessage?.text ?? "";
+      if (editedText) return { msgType: "text", text: editedText };
+    }
+  }
 
   if (message.imageMessage) {
     const caption = message.imageMessage.caption ?? "";
@@ -51,7 +65,6 @@ function extractMedia(rawMessage: WAMessage["message"]): MediaInfo {
       msgType: "image",
       text: caption || "[Imagem]",
       mediaCaption: caption || undefined,
-      // URL direta do WhatsApp CDN (válida por ~5 min) — suficiente para exibir
       mediaUrl: message.imageMessage.url ?? undefined,
     };
   }
@@ -87,12 +100,24 @@ function extractMedia(rawMessage: WAMessage["message"]): MediaInfo {
       mediaUrl: message.stickerMessage.url ?? undefined,
     };
   }
+  if (message.locationMessage) {
+    const { degreesLatitude: lat, degreesLongitude: lng } = message.locationMessage;
+    return { msgType: "text", text: `📍 Localização: ${lat?.toFixed(5)},${lng?.toFixed(5)}` };
+  }
+  if (message.contactMessage) {
+    const name = message.contactMessage.displayName ?? "Contato";
+    return { msgType: "text", text: `👤 Contato: ${name}` };
+  }
 
-  // Texto puro
+  // Texto puro (conversation = mensagem simples sem formatação)
   const text =
     message.conversation ??
     message.extendedTextMessage?.text ??
     "";
+
+  // Mensagem sem conteúdo reconhecível — não persiste
+  if (!text) return { msgType: "text", text: "", skip: true };
+
   return { msgType: "text", text };
 }
 
@@ -106,8 +131,12 @@ export async function ingestBaileysMessage(sdrId: string, msg: WAMessage): Promi
   const phone = jidToPhone(jid);
   if (!phone) return;
 
+  const { msgType, text, mediaUrl, mediaCaption, fileName, skip } = extractMedia(msg.message);
+
+  // Ignora mensagens de protocolo sem conteúdo visível
+  if (skip) return;
+
   const stableId = msg.key.id ? `wa-${sdrId}-${msg.key.id}` : undefined;
-  const { msgType, text, mediaUrl, mediaCaption, fileName } = extractMedia(msg.message);
 
   await pushMessage({
     channel: "whatsapp",

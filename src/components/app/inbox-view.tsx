@@ -65,7 +65,7 @@ function ContactAvatar({ name, photo, size = "size-9" }: { name: string; photo?:
   );
 }
 
-const POLL_MS = 8000;
+const POLL_MS = 3000;
 
 /** Modo de filtro por data da conversa. */
 type DateFilterMode = "lastMsg" | "firstMsg";
@@ -117,12 +117,19 @@ export function InboxView() {
   const sinceRef = useRef(0);
 
   // ── Scroll automático ────────────────────────────────────────────────────
+  const chatScrollRef = useRef<HTMLDivElement>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
   // Âncora de contagem de mensagens da thread ativa — atualizada após o useMemo
   const threadMsgCountRef = useRef(0);
 
   function scrollToBottom(behavior: ScrollBehavior = "smooth") {
     chatBottomRef.current?.scrollIntoView({ behavior });
+  }
+  /** Retorna true se o usuário está perto do final (< 120px acima) */
+  function isNearBottom(): boolean {
+    const el = chatScrollRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
   }
   // Rola ao trocar de thread
   useEffect(() => { scrollToBottom("instant"); }, [activeThread]);
@@ -300,9 +307,9 @@ export function InboxView() {
     [scopedMessages, activeThread]
   );
 
-  // Scroll suave ao receber novas mensagens na thread ativa
+  // Scroll suave ao receber novas mensagens — só se usuário estiver perto do final
   useEffect(() => {
-    if (threadMessages.length > threadMsgCountRef.current) {
+    if (threadMessages.length > threadMsgCountRef.current && isNearBottom()) {
       scrollToBottom("smooth");
     }
     threadMsgCountRef.current = threadMessages.length;
@@ -657,6 +664,7 @@ export function InboxView() {
             </div>
 
             <div
+              ref={chatScrollRef}
               className="flex-1 space-y-1.5 overflow-y-auto p-4"
               style={{
                 backgroundColor: "#0b141a",

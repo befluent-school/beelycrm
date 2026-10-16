@@ -3,7 +3,7 @@
  * Webhook POST → Postgres → frontend polling GET.
  */
 
-import { and, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, lte, sql, max, min, count } from "drizzle-orm";
 import { db as client, schema } from "@/db";
 
 export interface InboxMessage {
@@ -199,49 +199,97 @@ export async function getThreadFirstTimestamps(): Promise<Record<string, number>
 
 /**
  * Conversas agrupadas por thread (sdrId+telefone), com resumo da última
- * mensagem — usado pela lista do Inbox. Agrega client-side sobre
- * getRecentMessages() para reaproveitar o caminho de leitura já validado
- * em vez de duplicar a lógica em SQL.
+ * mensagem — usado pela lista do Inbox.
+ * Usa SQL GROUP BY para evitar carregar todas as mensagens em memória.
  */
 export async function getThreads(): Promise<ThreadSummary[]> {
-  const messages = await getAllMessages();
-  const byThread = new Map<string, ThreadSummary>();
+  if (!client) {
+    // Fallback em memória para ambiente sem banco
+    const messages = memFallback;
+    const byThread = new Map<string, ThreadSummary>();
+    for (const m of messages) {
+      const key = m.threadKey ?? (m.sdrId ? `${m.sdrId}:${m.from}` : m.from);
+      const existing = byThread.get(key);
+      if (!existing || m.timestamp >= existing.lastTimestamp) {
+        byThread.set(key, {
+          threadKey: key, sdrId: m.sdrId, phone: m.from,
+          contactName: m.fromName || m.from, lastText: m.text,
+          lastTimestamp: m.timestamp, lastFromMe: m.fromMe ?? false, unread: 0,
+        });
+      }
+    }
+    return [...byThread.values()].sort((a, b) => b.lastTimestamp - a.lastTimestamp);
+  }
 
-  for (const m of messages) {
-    const key = m.threadKey ?? (m.sdrId ? `${m.sdrId}:${m.from}` : m.from);
-    const existing = byThread.get(key);
-    if (!existing || m.timestamp >= existing.lastTimestamp) {
-      byThread.set(key, {
-        threadKey: key,
-        sdrId: m.sdrId,
-        phone: m.from,
-        contactName: m.fromName || m.from,
-        lastText: m.text,
-        lastTimestamp: m.timestamp,
-        lastFromMe: m.fromMe ?? false,
-        unread: existing?.unread ?? 0,
+  try {
+    // Passo 1: timestamp max e última mensagem por thread via SQL
+    const summaryRows = await client
+      .select({
+        threadKey:     schema.inboxMessages.threadKey,
+        sdrId:         schema.inboxMessages.sdrId,
+        from:          schema.inboxMessages.from,
+        lastTimestamp: max(schema.inboxMessages.timestamp),
+        lastOutTs:     sql<number>`max(case when ${schema.inboxMessages.fromMe} = true then ${schema.inboxMessages.timestamp} else 0 end)`,
+        unreadCount:   sql<number>`count(case when ${schema.inboxMessages.fromMe} = false and ${schema.inboxMessages.timestamp} > (max(case when ${schema.inboxMessages.fromMe} = true then ${schema.inboxMessages.timestamp} else 0 end)) then 1 end)`,
+      })
+      .from(schema.inboxMessages)
+      .where(sql`${schema.inboxMessages.threadKey} is not null and ${schema.inboxMessages.sdrId} is not null`)
+      .groupBy(schema.inboxMessages.threadKey, schema.inboxMessages.sdrId, schema.inboxMessages.from);
+
+    if (summaryRows.length === 0) return [];
+
+    // Passo 2: para cada thread, busca a última mensagem real (texto + fromMe)
+    const threads: ThreadSummary[] = [];
+    for (const row of summaryRows) {
+      if (!row.threadKey || !row.lastTimestamp) continue;
+      const lastMsgRows = await client
+        .select({
+          text:     schema.inboxMessages.text,
+          fromMe:   schema.inboxMessages.fromMe,
+          fromName: schema.inboxMessages.fromName,
+        })
+        .from(schema.inboxMessages)
+        .where(
+          and(
+            eq(schema.inboxMessages.threadKey, row.threadKey),
+            eq(schema.inboxMessages.timestamp, row.lastTimestamp),
+          )
+        )
+        .limit(1);
+
+      // Busca nome do contato: prefere mensagem fromMe=false (nome real do lead)
+      const nameRows = await client
+        .select({ fromName: schema.inboxMessages.fromName })
+        .from(schema.inboxMessages)
+        .where(
+          and(
+            eq(schema.inboxMessages.threadKey, row.threadKey),
+            eq(schema.inboxMessages.fromMe, false),
+          )
+        )
+        .orderBy(desc(schema.inboxMessages.timestamp))
+        .limit(1);
+
+      const lastMsg = lastMsgRows[0];
+      const contactName = nameRows[0]?.fromName || row.from || row.threadKey;
+
+      threads.push({
+        threadKey:     row.threadKey,
+        sdrId:         row.sdrId ?? undefined,
+        phone:         row.from,
+        contactName,
+        lastText:      lastMsg?.text ?? "",
+        lastTimestamp: Number(row.lastTimestamp),
+        lastFromMe:    lastMsg?.fromMe ?? false,
+        unread:        Number(row.unreadCount ?? 0),
       });
     }
-  }
 
-  // Não lidas: mensagens recebidas (fromMe=false) mais recentes que a última enviada por nós.
-  const lastOutByThread = new Map<string, number>();
-  for (const m of messages) {
-    if (!m.fromMe) continue;
-    const key = m.threadKey ?? (m.sdrId ? `${m.sdrId}:${m.from}` : m.from);
-    lastOutByThread.set(key, Math.max(lastOutByThread.get(key) ?? 0, m.timestamp));
+    return threads.sort((a, b) => b.lastTimestamp - a.lastTimestamp);
+  } catch (e) {
+    console.error("[message-store] erro em getThreads:", e);
+    return [];
   }
-  for (const m of messages) {
-    if (m.fromMe) continue;
-    const key = m.threadKey ?? (m.sdrId ? `${m.sdrId}:${m.from}` : m.from);
-    const lastOut = lastOutByThread.get(key) ?? 0;
-    if (m.timestamp > lastOut) {
-      const t = byThread.get(key);
-      if (t) t.unread += 1;
-    }
-  }
-
-  return [...byThread.values()].sort((a, b) => b.lastTimestamp - a.lastTimestamp);
 }
 
 /**

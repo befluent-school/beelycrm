@@ -31,17 +31,14 @@ interface ManagedSession {
   connectedPhone: string | null;
   reconnectAttempts: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
+  heartbeatTimer: ReturnType<typeof setInterval> | null;
   manualDisconnect: boolean;
+  /** Geração do socket — incrementada a cada connect(), evita que eventos
+   *  de sockets antigos processem mensagens após reconexão. */
+  generation: number;
 }
 
-// globalThis, não um `Map` de módulo — Next.js (App Router/Turbopack)
-// compila cada route.ts como entrypoint próprio; um `const` de módulo
-// pode acabar instanciado uma vez por entrypoint em vez de compartilhado
-// entre rotas, o que quebrava silenciosamente este singleton (confirmado
-// em produção: a sessão conectava de verdade, visível nos logs do
-// Baileys, mas /api/sdrs/wa-lite/status lia um Map vazio diferente).
-// globalThis é o único objeto garantidamente compartilhado entre todos os
-// entrypoints dentro do mesmo processo Node.
+// globalThis — compartilhado entre todos os entrypoints Next.js no mesmo processo.
 const globalForWaLite = globalThis as unknown as { __waLiteSessions?: Map<string, ManagedSession> };
 const sessions = globalForWaLite.__waLiteSessions ?? (globalForWaLite.__waLiteSessions = new Map<string, ManagedSession>());
 
@@ -56,7 +53,9 @@ function getOrCreate(sdrId: string): ManagedSession {
       connectedPhone: null,
       reconnectAttempts: 0,
       reconnectTimer: null,
+      heartbeatTimer: null,
       manualDisconnect: false,
+      generation: 0,
     };
     sessions.set(sdrId, s);
   }
@@ -80,7 +79,22 @@ async function persistStatus(
     .where(eq(schema.sdrs.id, sdrId));
 }
 
-const RECONNECT_DELAYS_MS = [2000, 4000, 8000, 16000, 30000];
+// Backoff exponencial: 3s → 6s → 12s → 20s → 30s → mantém 30s
+const RECONNECT_DELAYS_MS = [3000, 6000, 12000, 20000, 30000];
+// Heartbeat a cada 25s — detecta sockets "zumbis" que parecem conectados mas pararam de receber
+const HEARTBEAT_MS = 25_000;
+
+/** Cancela heartbeat e reconnect timer sem alterar o estado da sessão. */
+function clearTimers(session: ManagedSession) {
+  if (session.reconnectTimer) {
+    clearTimeout(session.reconnectTimer);
+    session.reconnectTimer = null;
+  }
+  if (session.heartbeatTimer) {
+    clearInterval(session.heartbeatTimer);
+    session.heartbeatTimer = null;
+  }
+}
 
 /** Inicia (ou reusa, se já em andamento/conectada) a sessão de um SDR. */
 export async function startSession(sdrId: string): Promise<void> {
@@ -93,6 +107,10 @@ export async function startSession(sdrId: string): Promise<void> {
 }
 
 async function connect(session: ManagedSession): Promise<void> {
+  // Cancela timers anteriores antes de criar novo socket
+  clearTimers(session);
+
+  const gen = ++session.generation;
   const { state, saveCreds } = await usePostgresAuthState(session.sdrId);
 
   const sock = makeWASocket({
@@ -102,6 +120,12 @@ async function connect(session: ManagedSession): Promise<void> {
     },
     browser: Browsers.appropriate("Chrome"),
     syncFullHistory: false,
+    // Keepalive nativo do Baileys: envia ping a cada 20s para manter o WS vivo
+    keepAliveIntervalMs: 20_000,
+    // Timeout para conectar — se o WS não abrir em 60s, o Baileys fecha sozinho
+    connectTimeoutMs: 60_000,
+    // Retry de decifração de mensagens (evita crash em chave Signal expirada)
+    retryRequestDelayMs: 250,
   });
 
   session.sock = sock;
@@ -110,20 +134,53 @@ async function connect(session: ManagedSession): Promise<void> {
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", (update) => {
+    // Ignora eventos de gerações anteriores (socket zumbi)
+    if (session.generation !== gen) return;
     void handleConnectionUpdate(session, update);
   });
 
   sock.ev.on("messages.upsert", ({ messages, type }) => {
-    // "notify"  = mensagem nova chegando agora em tempo real.
-    // "append"  = Baileys sincronizando histórico já existente no celular
-    //             ao reconectar — inclui TODAS as conversas anteriores.
-    //             Processamos ambos para garantir histórico completo;
-    //             ingestBaileysMessage trata deduplicação por id.
+    if (session.generation !== gen) return;
+    // "notify"  = mensagem nova em tempo real.
+    // "append"  = histórico sincronizado ao reconectar.
     if (type !== "notify" && type !== "append") return;
     for (const msg of messages) {
       void ingestBaileysMessage(session.sdrId, msg);
     }
   });
+
+  // Heartbeat: verifica se o socket ainda responde; se não, força reconexão.
+  session.heartbeatTimer = setInterval(() => {
+    if (session.generation !== gen || session.state !== "connected") return;
+    const s = session.sock;
+    if (!s) {
+      console.warn(`[wa-lite] SDR ${session.sdrId} heartbeat: socket null com state=connected, forçando reconexão`);
+      void scheduleReconnect(session, true);
+      return;
+    }
+    // Testa se o socket WebSocket ainda está OPEN (readyState === 1)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ws = (s as any).ws;
+    if (ws && typeof ws.readyState === "number" && ws.readyState !== 1 /* OPEN */) {
+      console.warn(`[wa-lite] SDR ${session.sdrId} heartbeat: WS readyState=${ws.readyState}, forçando reconexão`);
+      void scheduleReconnect(session, true);
+    }
+  }, HEARTBEAT_MS);
+}
+
+async function scheduleReconnect(session: ManagedSession, immediate = false): Promise<void> {
+  clearTimers(session);
+  session.sock = null;
+  session.state = "disconnected";
+
+  if (session.manualDisconnect) return;
+
+  const delay = immediate ? 1000 : RECONNECT_DELAYS_MS[Math.min(session.reconnectAttempts, RECONNECT_DELAYS_MS.length - 1)];
+  session.reconnectAttempts += 1;
+  console.log(`[wa-lite] SDR ${session.sdrId} reconectando em ${delay}ms (tentativa ${session.reconnectAttempts})`);
+  session.reconnectTimer = setTimeout(() => {
+    void connect(session);
+  }, delay);
 }
 
 async function handleConnectionUpdate(
@@ -150,9 +207,15 @@ async function handleConnectionUpdate(
   }
 
   if (connection === "close") {
-    const statusCode = (lastDisconnect?.error as Boom | undefined)?.output?.statusCode;
+    const err = lastDisconnect?.error as Boom | undefined;
+    const statusCode = err?.output?.statusCode;
     const loggedOut = statusCode === DisconnectReason.loggedOut;
+    // Conflito de sessão (outro dispositivo/browser abriu a mesma sessão WA)
+    const isConflict = statusCode === DisconnectReason.connectionReplaced
+      || statusCode === 440  // conflict
+      || err?.message?.toLowerCase().includes("conflict");
 
+    clearTimers(session);
     session.sock = null;
 
     if (session.manualDisconnect || loggedOut) {
@@ -171,14 +234,21 @@ async function handleConnectionUpdate(
       return;
     }
 
-    // Queda não-intencional (rede, restart do WhatsApp, etc.) — reconecta
-    // com backoff exponencial limitado, sem desistir de vez.
-    const delay = RECONNECT_DELAYS_MS[Math.min(session.reconnectAttempts, RECONNECT_DELAYS_MS.length - 1)];
-    session.reconnectAttempts += 1;
-    console.log(`[wa-lite] SDR ${session.sdrId} caiu, reconectando em ${delay}ms (tentativa ${session.reconnectAttempts})`);
-    session.reconnectTimer = setTimeout(() => {
-      void connect(session);
-    }, delay);
+    if (isConflict) {
+      // Conflito de sessão: outro cliente WA Web assumiu o slot multi-device.
+      // Aguarda mais tempo antes de tentar reconectar para não ficar em loop.
+      console.warn(`[wa-lite] SDR ${session.sdrId} conflito de sessão (code=${statusCode}) — aguardando 15s antes de reconectar`);
+      session.state = "disconnected";
+      session.reconnectAttempts = Math.max(session.reconnectAttempts, 3); // pula para delay maior
+      session.reconnectTimer = setTimeout(() => {
+        void connect(session);
+      }, 15_000);
+      return;
+    }
+
+    // Queda não-intencional — reconecta com backoff exponencial
+    console.log(`[wa-lite] SDR ${session.sdrId} conexão fechada (code=${statusCode}), reconectando...`);
+    await scheduleReconnect(session);
   }
 }
 
@@ -202,16 +272,12 @@ export async function stopSession(sdrId: string): Promise<void> {
   const session = sessions.get(sdrId);
   if (!session) return;
   session.manualDisconnect = true;
-  if (session.reconnectTimer) {
-    clearTimeout(session.reconnectTimer);
-    session.reconnectTimer = null;
-  }
+  clearTimers(session);
   if (session.sock) {
     try {
       await session.sock.logout();
     } catch {
-      // logout pode falhar se o socket já estiver morto — segue o fluxo,
-      // o connection.update "close" (ou a limpeza manual abaixo) resolve.
+      // logout pode falhar se o socket já estiver morto — segue o fluxo.
     }
   }
   session.sock = null;
