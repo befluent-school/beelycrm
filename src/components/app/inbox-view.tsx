@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,8 @@ import { useStore, useHydrated } from "@/lib/store";
 import { TransferLeadDialog } from "@/components/app/transfer-lead-dialog";
 import {
   Send, Loader2, ArrowLeft, UserCog, Search, MessageSquareOff, Image as ImageIcon,
-  Mic, FileText, Video as VideoIcon, RefreshCw,
+  Mic, FileText, Video as VideoIcon, RefreshCw, CalendarDays, X,
+  Paperclip, Square, Download,
 } from "lucide-react";
 
 /* ── Tipos espelhando message-store.ts (client-safe, sem importar o server) ── */
@@ -66,6 +67,23 @@ function ContactAvatar({ name, photo, size = "size-9" }: { name: string; photo?:
 
 const POLL_MS = 8000;
 
+/** Modo de filtro por data da conversa. */
+type DateFilterMode = "lastMsg" | "firstMsg";
+
+interface DateRange {
+  from: string; // YYYY-MM-DD
+  to: string;   // YYYY-MM-DD
+}
+
+/** Converte YYYY-MM-DD para timestamp ms no início do dia (00:00:00 local). */
+function dateToStartMs(d: string): number {
+  return new Date(d + "T00:00:00").getTime();
+}
+/** Converte YYYY-MM-DD para timestamp ms no final do dia (23:59:59 local). */
+function dateToEndMs(d: string): number {
+  return new Date(d + "T23:59:59").getTime();
+}
+
 function timeLabel(ts: number): string {
   const d = new Date(ts);
   const today = new Date();
@@ -98,28 +116,101 @@ export function InboxView() {
   const [transferOpen, setTransferOpen] = useState(false);
   const sinceRef = useRef(0);
 
-  async function load(initial = false) {
+  // ── Scroll automático ────────────────────────────────────────────────────
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+  // Âncora de contagem de mensagens da thread ativa — atualizada após o useMemo
+  const threadMsgCountRef = useRef(0);
+
+  function scrollToBottom(behavior: ScrollBehavior = "smooth") {
+    chatBottomRef.current?.scrollIntoView({ behavior });
+  }
+  // Rola ao trocar de thread
+  useEffect(() => { scrollToBottom("instant"); }, [activeThread]);
+
+  // ── Envio de mídia (arquivo) ─────────────────────────────────────────────
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+
+  // ── Gravação de áudio ────────────────────────────────────────────────────
+  const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  // ── Filtro de data ───────────────────────────────────────────────────────
+  const [dateFilterOpen, setDateFilterOpen] = useState(false);
+  const [dateFilterMode, setDateFilterMode] = useState<DateFilterMode>("lastMsg");
+  const [dateRange, setDateRange] = useState<DateRange>({ from: "", to: "" });
+  // firstTimestamps: mapa threadKey → timestamp ms da primeira mensagem
+  const [firstTimestamps, setFirstTimestamps] = useState<Record<string, number>>({});
+
+  const hasDateFilter = dateRange.from !== "" || dateRange.to !== "";
+
+  function clearDateFilter() {
+    setDateRange({ from: "", to: "" });
+    setDateFilterOpen(false);
+  }
+
+  // Quando o filtro é por data da ÚLTIMA mensagem, passamos ?from=&to= para a API
+  // e filtramos no servidor. Quando é por data da PRIMEIRA mensagem, carregamos
+  // o mapa firstTimestamps e filtramos client-side nas threads.
+  const buildApiUrl = useCallback((initial: boolean) => {
+    if (!hasDateFilter || dateFilterMode === "firstMsg") {
+      // sem filtro de data (ou filtro de 1ª msg que filtra client-side)
+      return `/api/inbox/messages${sinceRef.current && !initial ? `?since=${sinceRef.current}` : ""}`;
+    }
+    const params = new URLSearchParams();
+    if (dateRange.from) params.set("from", String(dateToStartMs(dateRange.from)));
+    if (dateRange.to)   params.set("to",   String(dateToEndMs(dateRange.to)));
+    return `/api/inbox/messages?${params.toString()}`;
+  }, [hasDateFilter, dateFilterMode, dateRange]);
+
+  const load = useCallback(async (initial = false) => {
     try {
-      const res = await fetch(`/api/inbox/messages${sinceRef.current ? `?since=${sinceRef.current}` : ""}`);
+      const url = buildApiUrl(initial);
+      const res = await fetch(url);
       const data: InboxMessage[] = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         setMessages((prev) => {
-          const merged = initial ? data : [...prev, ...data];
+          // em filtro server-side por data: substitui completamente
+          const merged = (initial || hasDateFilter) ? data : [...prev, ...data];
           const byId = new Map(merged.map((m) => [m.id, m]));
           return [...byId.values()].sort((a, b) => a.timestamp - b.timestamp);
         });
-        sinceRef.current = Math.max(...data.map((m) => m.timestamp));
+        if (data.length > 0 && !hasDateFilter) {
+          sinceRef.current = Math.max(...data.map((m) => m.timestamp));
+        }
       }
     } catch {
       /* polling silencioso — não interrompe a UI */
     } finally {
       setLoading(false);
     }
-  }
+  }, [buildApiUrl, hasDateFilter]);
+
+  // Carrega firstTimestamps quando o modo é "firstMsg" e há filtro ativo
+  useEffect(() => {
+    if (!hasDateFilter || dateFilterMode !== "firstMsg") return;
+    fetch("/api/inbox/messages?firstTimestamps=1")
+      .then((r) => r.json())
+      .then((data) => { if (data && typeof data === "object") setFirstTimestamps(data); })
+      .catch(() => {});
+  }, [hasDateFilter, dateFilterMode]);
+
+  // Referência estável para o polling — sempre aponta para a versão mais atual de load.
+  const loadRef = useRef(load);
+  useEffect(() => { loadRef.current = load; }, [load]);
 
   useEffect(() => {
+    sinceRef.current = 0;
+    setLoading(true);
     load(true);
-    const id = setInterval(() => load(false), POLL_MS);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange, dateFilterMode]);
+
+  useEffect(() => {
+    loadRef.current(true);
+    const id = setInterval(() => loadRef.current(false), POLL_MS);
     return () => clearInterval(id);
   }, []);
 
@@ -190,8 +281,18 @@ export function InboxView() {
       const q = search.trim().toLowerCase();
       list = list.filter((t) => t.contactName.toLowerCase().includes(q) || t.phone.includes(q));
     }
+    // Filtro por data da PRIMEIRA mensagem (client-side, usando o mapa carregado)
+    if (hasDateFilter && dateFilterMode === "firstMsg") {
+      const fromMs = dateRange.from ? dateToStartMs(dateRange.from) : 0;
+      const toMs   = dateRange.to   ? dateToEndMs(dateRange.to)     : Infinity;
+      list = list.filter((t) => {
+        const first = firstTimestamps[t.threadKey];
+        if (first == null) return false;
+        return first >= fromMs && first <= toMs;
+      });
+    }
     return list;
-  }, [threads, sdrFilter, search]);
+  }, [threads, sdrFilter, search, hasDateFilter, dateFilterMode, dateRange, firstTimestamps]);
 
   const currentThread = threads.find((t) => t.threadKey === activeThread) ?? null;
   const threadMessages = useMemo(
@@ -199,38 +300,129 @@ export function InboxView() {
     [scopedMessages, activeThread]
   );
 
+  // Scroll suave ao receber novas mensagens na thread ativa
+  useEffect(() => {
+    if (threadMessages.length > threadMsgCountRef.current) {
+      scrollToBottom("smooth");
+    }
+    threadMsgCountRef.current = threadMessages.length;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadMessages.length]);
+
   const linkedContact = currentThread
     ? contacts.find((c) => c.phone.replace(/\D/g, "") === currentThread.phone.replace(/\D/g, ""))
     : undefined;
   const sdrOfThread = currentThread?.sdrId ? sdrs.find((s) => s.id === currentThread.sdrId) : undefined;
 
+  /** Adiciona mensagem ao state local imediatamente (UI otimista) e rola para o final. */
+  function addOptimisticMessage(partial: Omit<InboxMessage, "id">) {
+    const opt: InboxMessage = { ...partial, id: `opt-${Date.now()}-${Math.random().toString(36).slice(2)}` };
+    setMessages((prev) => {
+      const byId = new Map(prev.map((m) => [m.id, m]));
+      byId.set(opt.id, opt);
+      return [...byId.values()].sort((a, b) => a.timestamp - b.timestamp);
+    });
+    setTimeout(() => scrollToBottom("smooth"), 50);
+  }
+
   async function handleSend() {
     if (!currentThread || !draft.trim()) return;
     setSending(true);
+    const text = draft.trim();
+    setDraft("");
+    // UI otimista: mostra a mensagem imediatamente
+    addOptimisticMessage({
+      channel: "whatsapp", from: currentThread.phone,
+      fromName: currentThread.contactName, text,
+      timestamp: Date.now(), fromMe: true, msgType: "text",
+      sdrId: currentThread.sdrId, threadKey: currentThread.threadKey,
+    });
     try {
       const res = await fetch("/api/inbox/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phone: currentThread.phone,
-          text: draft.trim(),
-          contactName: currentThread.contactName,
-          sdrId: currentThread.sdrId,
-        }),
+        body: JSON.stringify({ phone: currentThread.phone, text, contactName: currentThread.contactName, sdrId: currentThread.sdrId }),
       });
       const data = await res.json();
       if (data.sendOk === false && data.sendError) {
         toast.error(`Mensagem salva, mas o envio falhou: ${data.sendError}`);
-      } else {
-        toast.success("Mensagem enviada.");
       }
-      setDraft("");
       await load(false);
     } catch {
       toast.error("Falha ao enviar mensagem.");
     } finally {
       setSending(false);
     }
+  }
+
+  async function handleSendMedia(file: File) {
+    if (!currentThread) return;
+    setUploadingFile(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const uploadRes = await fetch("/api/inbox/upload", { method: "POST", body: formData });
+      const uploadData = await uploadRes.json();
+      if (!uploadData.ok) { toast.error(`Falha no upload: ${uploadData.error}`); return; }
+
+      const { mediaUrl, mediaType, fileName } = uploadData;
+      // UI otimista
+      addOptimisticMessage({
+        channel: "whatsapp", from: currentThread.phone,
+        fromName: currentThread.contactName,
+        text: mediaType === "image" ? "[Imagem]" : mediaType === "audio" ? "[Áudio]" : mediaType === "video" ? "[Vídeo]" : `[${fileName}]`,
+        timestamp: Date.now(), fromMe: true, msgType: mediaType,
+        mediaUrl, fileName, sdrId: currentThread.sdrId, threadKey: currentThread.threadKey,
+      });
+
+      const sendRes = await fetch("/api/inbox/send", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: currentThread.phone, contactName: currentThread.contactName, sdrId: currentThread.sdrId, mediaUrl, mediaType, fileName }),
+      });
+      const sendData = await sendRes.json();
+      if (sendData.sendOk === false && sendData.sendError) {
+        toast.error(`Arquivo salvo, mas envio falhou: ${sendData.sendError}`);
+      }
+      await load(false);
+    } catch {
+      toast.error("Falha ao enviar arquivo.");
+    } finally {
+      setUploadingFile(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleStartRecording() {
+    if (!navigator.mediaDevices) { toast.error("Microfone não disponível neste navegador."); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      mr.start();
+      mediaRecorderRef.current = mr;
+      setRecording(true);
+      setRecordingSeconds(0);
+      // timer de segundos
+      const interval = setInterval(() => setRecordingSeconds((s) => s + 1), 1000);
+      mr.onstop = () => {
+        clearInterval(interval);
+        stream.getTracks().forEach((t) => t.stop());
+      };
+    } catch {
+      toast.error("Não foi possível acessar o microfone.");
+    }
+  }
+
+  async function handleStopRecording() {
+    const mr = mediaRecorderRef.current;
+    if (!mr) return;
+    setRecording(false);
+    mr.stop();
+    await new Promise<void>((resolve) => { mr.onstop = () => { resolve(); }; setTimeout(resolve, 500); });
+    const blob = new Blob(audioChunksRef.current, { type: "audio/ogg; codecs=opus" });
+    const file = new File([blob], `audio-${Date.now()}.ogg`, { type: "audio/ogg" });
+    await handleSendMedia(file);
   }
 
   if (!hydrated) return null;
@@ -303,10 +495,94 @@ export function InboxView() {
               className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
+          <Button
+            variant={hasDateFilter ? "default" : "ghost"}
+            size="icon"
+            className="size-8 shrink-0"
+            onClick={() => setDateFilterOpen((v) => !v)}
+            title="Filtrar por data"
+          >
+            <CalendarDays className="size-3.5" />
+          </Button>
           <Button variant="ghost" size="icon" className="size-8 shrink-0" onClick={() => load(false)} title="Atualizar">
             <RefreshCw className="size-3.5" />
           </Button>
         </div>
+
+        {/* Painel de filtro por data */}
+        {dateFilterOpen && (
+          <div className="border-b border-border/70 bg-[#111] px-3 py-3 space-y-2.5">
+            {/* Modo: última ou primeira mensagem */}
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => setDateFilterMode("lastMsg")}
+                className={cn(
+                  "flex-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
+                  dateFilterMode === "lastMsg"
+                    ? "bg-primary text-primary-foreground"
+                    : "border border-border text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Última mensagem
+              </button>
+              <button
+                onClick={() => setDateFilterMode("firstMsg")}
+                className={cn(
+                  "flex-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
+                  dateFilterMode === "firstMsg"
+                    ? "bg-primary text-primary-foreground"
+                    : "border border-border text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Primeira mensagem
+              </button>
+            </div>
+
+            {/* Período: de / até */}
+            <div className="flex items-center gap-1.5">
+              <div className="flex-1">
+                <label className="mb-0.5 block text-[10px] text-muted-foreground">De</label>
+                <input
+                  type="date"
+                  value={dateRange.from}
+                  onChange={(e) => setDateRange((r) => ({ ...r, from: e.target.value }))}
+                  className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring [color-scheme:dark]"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="mb-0.5 block text-[10px] text-muted-foreground">Até</label>
+                <input
+                  type="date"
+                  value={dateRange.to}
+                  onChange={(e) => setDateRange((r) => ({ ...r, to: e.target.value }))}
+                  className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring [color-scheme:dark]"
+                />
+              </div>
+            </div>
+
+            {/* Data única (atalho: preenche from=to) */}
+            <div>
+              <label className="mb-0.5 block text-[10px] text-muted-foreground">Ou data específica</label>
+              <input
+                type="date"
+                value={dateRange.from === dateRange.to ? dateRange.from : ""}
+                onChange={(e) => setDateRange({ from: e.target.value, to: e.target.value })}
+                className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring [color-scheme:dark]"
+              />
+            </div>
+
+            {hasDateFilter && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-full gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+                onClick={clearDateFilter}
+              >
+                <X className="size-3" /> Limpar filtro
+              </Button>
+            )}
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto">
           {loading ? (
@@ -392,18 +668,66 @@ export function InboxView() {
               {threadMessages.map((m) => (
                 <div key={m.id} className={cn("flex", m.fromMe ? "justify-end" : "justify-start")}>
                   <div className={cn(
-                    "max-w-[75%] rounded-lg px-3 py-2 text-sm shadow-sm",
-                    m.fromMe
-                      ? "rounded-tr-sm bg-primary text-primary-foreground"
-                      : "rounded-tl-sm bg-[#202c33] text-foreground"
+                    "max-w-[75%] rounded-lg shadow-sm overflow-hidden",
+                    m.fromMe ? "rounded-tr-sm bg-primary text-primary-foreground" : "rounded-tl-sm bg-[#202c33] text-foreground",
+                    m.msgType === "image" || m.msgType === "video" ? "p-0" : "px-3 py-2 text-sm",
                   )}>
-                    {m.msgType && m.msgType !== "text" && (
-                      <div className="mb-1 flex items-center gap-1 text-[10px] opacity-70">
-                        <MediaIcon type={m.msgType} /> {m.msgType}
+                    {/* ── IMAGEM ── */}
+                    {m.msgType === "image" && m.mediaUrl && (
+                      <a href={m.mediaUrl} target="_blank" rel="noreferrer">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={m.mediaUrl} alt={m.mediaCaption ?? "Imagem"} className="max-h-64 max-w-xs object-cover" />
+                      </a>
+                    )}
+                    {m.msgType === "image" && !m.mediaUrl && (
+                      <div className="flex items-center gap-2 px-3 py-2 text-sm opacity-70"><ImageIcon className="size-4" /> Imagem</div>
+                    )}
+
+                    {/* ── ÁUDIO ── */}
+                    {m.msgType === "audio" && (
+                      <div className="px-3 py-2">
+                        {m.mediaUrl
+                          ? <audio controls src={m.mediaUrl} className="max-w-[240px]" />
+                          : <span className="flex items-center gap-1 text-sm opacity-70"><Mic className="size-4" /> Áudio</span>
+                        }
                       </div>
                     )}
-                    <p className="whitespace-pre-wrap break-words">{m.text}</p>
-                    <p className={cn("mt-1 text-right text-[10px]", m.fromMe ? "text-primary-foreground/70" : "text-muted-foreground")}>
+
+                    {/* ── VÍDEO ── */}
+                    {m.msgType === "video" && m.mediaUrl && (
+                      <video controls src={m.mediaUrl} className="max-h-64 max-w-xs" />
+                    )}
+                    {m.msgType === "video" && !m.mediaUrl && (
+                      <div className="flex items-center gap-2 px-3 py-2 text-sm opacity-70"><VideoIcon className="size-4" /> Vídeo</div>
+                    )}
+
+                    {/* ── DOCUMENTO ── */}
+                    {m.msgType === "document" && (
+                      <div className="flex items-center gap-2 px-3 py-2 text-sm">
+                        <FileText className="size-4 shrink-0" />
+                        <span className="flex-1 truncate">{m.fileName ?? "Arquivo"}</span>
+                        {m.mediaUrl && (
+                          <a href={m.mediaUrl} download={m.fileName} target="_blank" rel="noreferrer" title="Baixar">
+                            <Download className="size-3.5 opacity-70 hover:opacity-100" />
+                          </a>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── TEXTO (ou legenda após mídia) ── */}
+                    {(m.msgType === "text" || !m.msgType) && (
+                      <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                    )}
+                    {(m.msgType === "image" || m.msgType === "video") && m.mediaCaption && (
+                      <p className="px-3 pb-1 pt-0.5 text-xs opacity-90">{m.mediaCaption}</p>
+                    )}
+
+                    {/* ── TIMESTAMP ── */}
+                    <p className={cn(
+                      "text-right text-[10px]",
+                      m.msgType === "image" || m.msgType === "video" ? "px-2 pb-1" : "mt-1",
+                      m.fromMe ? "text-primary-foreground/70" : "text-muted-foreground"
+                    )}>
                       {timeLabel(m.timestamp)}
                     </p>
                   </div>
@@ -412,19 +736,67 @@ export function InboxView() {
               {threadMessages.length === 0 && (
                 <p className="py-10 text-center text-sm text-muted-foreground">Sem mensagens nesta conversa ainda.</p>
               )}
+              {/* Âncora para scroll automático */}
+              <div ref={chatBottomRef} />
             </div>
 
             <div className="flex items-center gap-2 border-t border-border/70 p-3">
+              {/* Input oculto para seleção de arquivo */}
               <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                placeholder="Escreva uma mensagem..."
-                className="h-10 flex-1 rounded-full border border-input bg-background px-4 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleSendMedia(f); }}
               />
-              <Button size="icon" className="size-10 shrink-0 rounded-full" onClick={handleSend} disabled={!draft.trim() || sending}>
-                {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+
+              {/* Botão de arquivo */}
+              <Button
+                variant="ghost" size="icon" className="size-9 shrink-0"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingFile || recording || sending}
+                title="Enviar arquivo"
+              >
+                {uploadingFile ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
               </Button>
+
+              {/* Campo de texto ou indicador de gravação */}
+              {recording ? (
+                <div className="flex flex-1 items-center gap-2 rounded-full border border-destructive bg-destructive/10 px-4 py-2 text-sm text-destructive">
+                  <span className="size-2 animate-pulse rounded-full bg-destructive" />
+                  Gravando… {recordingSeconds}s
+                </div>
+              ) : (
+                <input
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                  placeholder="Escreva uma mensagem..."
+                  className="h-10 flex-1 rounded-full border border-input bg-background px-4 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  disabled={uploadingFile || sending}
+                />
+              )}
+
+              {/* Botão de gravar áudio ou parar gravação */}
+              {!draft.trim() && (
+                <Button
+                  variant={recording ? "destructive" : "ghost"}
+                  size="icon"
+                  className="size-9 shrink-0"
+                  onClick={recording ? handleStopRecording : handleStartRecording}
+                  disabled={uploadingFile || sending}
+                  title={recording ? "Parar e enviar áudio" : "Gravar áudio"}
+                >
+                  {recording ? <Square className="size-4" /> : <Mic className="size-4" />}
+                </Button>
+              )}
+
+              {/* Botão de enviar texto */}
+              {(draft.trim() || sending) && (
+                <Button size="icon" className="size-10 shrink-0 rounded-full" onClick={handleSend} disabled={!draft.trim() || sending}>
+                  {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                </Button>
+              )}
             </div>
           </>
         )}

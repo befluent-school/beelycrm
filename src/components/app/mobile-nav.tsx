@@ -1,52 +1,46 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu } from "lucide-react";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Logo } from "@/components/logo";
-import { NAV } from "@/lib/nav";
 import { cn } from "@/lib/utils";
+import { NAV } from "@/lib/nav";
+
+// Itens que aparecem na bottom bar mobile (os mais usados)
+const MOBILE_NAV = NAV.filter((item) =>
+  ["/dashboard", "/contatos", "/inbox", "/pipeline", "/configuracoes"].includes(item.href)
+);
 
 export function MobileNav() {
-  const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Abrir menu">
-          <Menu className="size-5" />
-        </Button>
-      </SheetTrigger>
-      <SheetContent side="left" className="w-72 max-w-[85vw] p-0">
-        <div className="flex h-16 items-center border-b border-border/70 px-5">
-          <Logo />
-        </div>
-        <nav className="space-y-1 overflow-y-auto p-3">
-          {NAV.map(({ label, href, icon: Icon, badge }) => {
-            const active = pathname === href || pathname.startsWith(`${href}/`);
-            return (
-              <Link
-                key={href}
-                href={href}
-                onClick={() => setOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                  active ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
-                )}
-              >
-                <Icon className="size-4.5 shrink-0" />
-                <span className="flex-1">{label}</span>
-                {badge && <Badge className="h-5 px-1.5 text-[10px]">{badge}</Badge>}
-              </Link>
-            );
-          })}
-        </nav>
-      </SheetContent>
-    </Sheet>
+    <>
+      {/* Topbar mobile — logo + título da página atual */}
+      <header className="flex h-14 items-center justify-between border-b border-border/70 bg-[#1e1e1e] px-4 lg:hidden">
+        <span className="font-display text-base font-bold tracking-tight text-foreground">
+          {NAV.find((n) => pathname === n.href || pathname.startsWith(`${n.href}/`))?.label ?? "Beely CRM"}
+        </span>
+      </header>
+
+      {/* Bottom tab bar mobile */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 flex h-16 items-center justify-around border-t border-border/70 bg-[#1e1e1e] pb-safe lg:hidden">
+        {MOBILE_NAV.map(({ label, href, icon: Icon }) => {
+          const active = pathname === href || pathname.startsWith(`${href}/`);
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={cn(
+                "flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] transition-colors",
+                active ? "text-primary" : "text-muted-foreground"
+              )}
+            >
+              <Icon className={cn("size-5", active && "drop-shadow-[0_0_6px_var(--primary)]")} />
+              <span className="truncate">{label.split(" ")[0]}</span>
+            </Link>
+          );
+        })}
+      </nav>
+    </>
   );
 }

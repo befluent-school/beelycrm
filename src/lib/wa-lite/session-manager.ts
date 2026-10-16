@@ -114,13 +114,12 @@ async function connect(session: ManagedSession): Promise<void> {
   });
 
   sock.ev.on("messages.upsert", ({ messages, type }) => {
-    // "notify" = mensagem nova chegando agora de verdade. "append" = o
-    // Baileys sincronizando histórico antigo do celular ao conectar — sem
-    // esse filtro, toda a sincronização inicial (centenas de mensagens
-    // antigas, inclusive do próprio número) era gravada como se fosse
-    // conversa nova, nunca com o texto certo (histórico vem só com
-    // metadados/mídia criptografada, não o texto puro).
-    if (type !== "notify") return;
+    // "notify"  = mensagem nova chegando agora em tempo real.
+    // "append"  = Baileys sincronizando histórico já existente no celular
+    //             ao reconectar — inclui TODAS as conversas anteriores.
+    //             Processamos ambos para garantir histórico completo;
+    //             ingestBaileysMessage trata deduplicação por id.
+    if (type !== "notify" && type !== "append") return;
     for (const msg of messages) {
       void ingestBaileysMessage(session.sdrId, msg);
     }

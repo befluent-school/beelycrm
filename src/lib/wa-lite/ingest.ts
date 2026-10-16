@@ -7,6 +7,7 @@
  */
 import {
   normalizeMessageContent, isJidBroadcast, isJidGroup, isJidNewsletter, isJidStatusBroadcast,
+  downloadMediaMessage,
   type WAMessage,
 } from "@whiskeysockets/baileys";
 import { pushMessage } from "@/lib/message-store";
@@ -17,9 +18,6 @@ function jidToPhone(jid: string | null | undefined): string {
 }
 
 function extractText(rawMessage: WAMessage["message"]): string {
-  // normalizeMessageContent desembrulha ephemeralMessage/viewOnceMessage
-  // (comuns em conversas reais do WhatsApp moderno) — sem isso, o texto
-  // real fica um nível mais fundo e extractText nunca encontrava nada.
   const message = normalizeMessageContent(rawMessage);
   if (!message) return "";
   return (
@@ -28,44 +26,102 @@ function extractText(rawMessage: WAMessage["message"]): string {
     message.imageMessage?.caption ??
     message.videoMessage?.caption ??
     message.documentMessage?.caption ??
+    (message.audioMessage ? "[Áudio]" : undefined) ??
     ""
   );
 }
 
-function extractMsgType(rawMessage: WAMessage["message"]): "text" | "image" | "audio" | "document" | "video" {
+type MsgType = "text" | "image" | "audio" | "document" | "video";
+
+interface MediaInfo {
+  msgType: MsgType;
+  text: string;
+  mediaUrl?: string;
+  mediaCaption?: string;
+  fileName?: string;
+}
+
+function extractMedia(rawMessage: WAMessage["message"]): MediaInfo {
   const message = normalizeMessageContent(rawMessage);
-  if (!message) return "text";
-  if (message.imageMessage) return "image";
-  if (message.audioMessage) return "audio";
-  if (message.documentMessage) return "document";
-  if (message.videoMessage) return "video";
-  return "text";
+  if (!message) return { msgType: "text", text: "" };
+
+  if (message.imageMessage) {
+    const caption = message.imageMessage.caption ?? "";
+    return {
+      msgType: "image",
+      text: caption || "[Imagem]",
+      mediaCaption: caption || undefined,
+      // URL direta do WhatsApp CDN (válida por ~5 min) — suficiente para exibir
+      mediaUrl: message.imageMessage.url ?? undefined,
+    };
+  }
+  if (message.audioMessage) {
+    return {
+      msgType: "audio",
+      text: "[Áudio]",
+      mediaUrl: message.audioMessage.url ?? undefined,
+    };
+  }
+  if (message.videoMessage) {
+    const caption = message.videoMessage.caption ?? "";
+    return {
+      msgType: "video",
+      text: caption || "[Vídeo]",
+      mediaCaption: caption || undefined,
+      mediaUrl: message.videoMessage.url ?? undefined,
+    };
+  }
+  if (message.documentMessage) {
+    const name = message.documentMessage.fileName ?? "arquivo";
+    return {
+      msgType: "document",
+      text: `[Documento: ${name}]`,
+      fileName: name,
+      mediaUrl: message.documentMessage.url ?? undefined,
+    };
+  }
+  if (message.stickerMessage) {
+    return {
+      msgType: "image",
+      text: "[Sticker]",
+      mediaUrl: message.stickerMessage.url ?? undefined,
+    };
+  }
+
+  // Texto puro
+  const text =
+    message.conversation ??
+    message.extendedTextMessage?.text ??
+    "";
+  return { msgType: "text", text };
 }
 
 export async function ingestBaileysMessage(sdrId: string, msg: WAMessage): Promise<void> {
-  // Mensagens de sistema/protocolo (sem conteúdo real) — ignora.
   if (!msg.message) return;
 
   const jid = msg.key.remoteJid;
-  // Só conversas 1:1 reais — grupo, status (stories), listas de transmissão
-  // e newsletters não são tratados pelo Inbox hoje (foco 1:1 com leads), e
-  // sem esse filtro o JID de status ("status@broadcast") virava um
-  // "contato" com número sem sentido no Inbox.
   if (!jid || isJidGroup(jid) || isJidBroadcast(jid) || isJidStatusBroadcast(jid) || isJidNewsletter(jid)) return;
 
   const isLid = !!jid.endsWith("@lid");
   const phone = jidToPhone(jid);
   if (!phone) return;
 
+  const stableId = msg.key.id ? `wa-${sdrId}-${msg.key.id}` : undefined;
+  const { msgType, text, mediaUrl, mediaCaption, fileName } = extractMedia(msg.message);
+
   await pushMessage({
     channel: "whatsapp",
     from: phone,
     fromName: msg.pushName || phone,
-    text: extractText(msg.message),
+    text,
     timestamp: msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : Date.now(),
     fromMe: !!msg.key.fromMe,
-    msgType: extractMsgType(msg.message),
+    msgType,
+    mediaUrl,
+    mediaCaption,
+    fileName,
     isLid,
     sdrId,
+    stableId,
   });
 }

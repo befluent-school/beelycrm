@@ -128,8 +128,8 @@ export async function POST(request: Request, ctx: Ctx) {
 
   try {
     if (provider === "whatsapp")  await handleWhatsApp(payload, sdr);
-    if (provider === "instagram") await handleInstagram(payload);
-    if (provider === "messenger") await handleMessenger(payload);
+    if (provider === "instagram") await handleInstagram(payload, sdr);
+    if (provider === "messenger") await handleMessenger(payload, sdr);
   } catch (err) {
     console.error(`[webhook:${provider}/${sdrId}] erro no handler`, err);
   }

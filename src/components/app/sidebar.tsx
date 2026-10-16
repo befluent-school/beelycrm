@@ -2,13 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Logo } from "@/components/logo";
 import { NAV } from "@/lib/nav";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
+interface OrgInfo { name?: string; email?: string; plan?: string }
+
 export function Sidebar() {
   const pathname = usePathname();
+  const [org, setOrg] = useState<OrgInfo>({});
+
+  useEffect(() => {
+    fetch("/api/data/org-info")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d) setOrg(d); })
+      .catch(() => {});
+  }, []);
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r border-border/70 bg-[#1e1e1e] lg:flex">
@@ -39,16 +50,18 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="p-3">
-        <div className="card-premium block rounded-xl p-4">
-          <div className="flex items-center gap-2">
-            <p className="font-display text-sm font-semibold">Plano Enterprise</p>
-            <span className="rounded-full bg-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary">ATIVO</span>
+      {(org.name || org.email) && (
+        <div className="p-3">
+          <div className="card-premium block rounded-xl p-4">
+            <div className="flex items-center gap-2">
+              <p className="font-display text-sm font-semibold">{org.plan ? `Plano ${org.plan}` : "Plano"}</p>
+              <span className="rounded-full bg-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary">ATIVO</span>
+            </div>
+            {org.name && <p className="mt-0.5 truncate text-xs text-muted-foreground">{org.name}</p>}
+            {org.email && <div className="mt-2 truncate text-[10px] text-muted-foreground">{org.email}</div>}
           </div>
-          <p className="mt-0.5 text-xs text-muted-foreground">Be Fluent Idiomas & Ensino LTDA</p>
-          <div className="mt-2 text-[10px] text-muted-foreground">befluentschooll@gmail.com</div>
         </div>
-      </div>
+      )}
     </aside>
   );
 }
